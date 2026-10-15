@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import re
+import time
+from collections.abc import Iterator
 
-from conftest import TOKEN, Server
+import pytest
+
+from conftest import FIXTURE_DOCS, TOKEN, Server, start_server, stop_server
 
 INIT = {
     "jsonrpc": "2.0",
@@ -75,3 +79,59 @@ def test_refresh(server: Server) -> None:
 
 def test_unknown_path_404(server: Server) -> None:
     assert server.http("GET", "/nope").status_code == 404
+
+
+def test_403_names_the_setting(server: Server) -> None:
+    r = server.http("POST", "/mcp", json=INIT, headers={**MCP_HEADERS, **auth(), "Host": "evil.example"})
+    assert "MCP_ALLOWED_HOSTS" in r.text
+
+
+def test_no_default_warnings_when_configured(server: Server) -> None:
+    assert "is not set" not in server.logs()
+
+
+@pytest.fixture(scope="module")
+def defaults(impl: str, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Server]:
+    """A server left at the defaults: no token, no allowed hosts (empty counts as unset)."""
+    tmp = tmp_path_factory.mktemp(f"{impl}-defaults")
+    env = {"DOCS_LOCAL_PATH": str(FIXTURE_DOCS), "MCP_AUTH_TOKEN": "", "MCP_ALLOWED_HOSTS": ""}
+    s = start_server(impl, env, tmp)
+    yield s
+    stop_server(s)
+
+
+def wait_for_log(server: Server, text: str) -> str:
+    for _ in range(40):
+        if text in (logs := server.logs()):
+            return logs
+        time.sleep(0.05)
+    raise AssertionError(f"{text!r} not in log:\n{server.logs()}")
+
+
+def test_defaults_are_announced(defaults: Server) -> None:
+    wait_for_log(defaults, "MCP_ALLOWED_HOSTS is not set: only requests addressed to localhost are accepted.")
+    wait_for_log(defaults, "MCP_AUTH_TOKEN is not set: anyone who can reach this server can use it.")
+
+
+def test_defaults_serve_localhost_without_token(defaults: Server) -> None:
+    r = defaults.http("POST", "/mcp", json=INIT, headers=MCP_HEADERS)
+    assert r.status_code == 200
+
+
+def test_refused_host_logged_once(defaults: Server) -> None:
+    for _ in range(3):
+        r = defaults.http("POST", "/mcp", json=INIT, headers={**MCP_HEADERS, "Host": "docs.example.internal:8080"})
+        assert r.status_code == 403
+    logs = wait_for_log(defaults, "refused a request for host 'docs.example.internal'")
+    assert logs.count("refused a request for host 'docs.example.internal'") == 1
+
+
+def test_wildcard_hosts_announced(impl: str, tmp_path_factory: pytest.TempPathFactory) -> None:
+    tmp = tmp_path_factory.mktemp(f"{impl}-wildcard")
+    s = start_server(impl, {"DOCS_LOCAL_PATH": str(FIXTURE_DOCS), "MCP_ALLOWED_HOSTS": "*"}, tmp)
+    try:
+        wait_for_log(s, "MCP_ALLOWED_HOSTS is '*': the Host header is not checked.")
+        r = s.http("POST", "/mcp", json=INIT, headers={**MCP_HEADERS, **auth(), "Host": "anything.example"})
+        assert r.status_code == 200
+    finally:
+        stop_server(s)

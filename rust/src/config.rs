@@ -19,6 +19,7 @@ pub struct Config {
     pub ignore_fields: HashSet<String>,
     pub refresh_seconds: u64,
     pub name: String,
+    pub language: Option<String>,
     pub site_url: Option<String>,
     pub git_username: String,
     pub git_token: Option<String>,
@@ -30,6 +31,8 @@ pub struct Config {
     pub auth_token: Option<String>,
     /// `None` means any host.
     pub allowed_hosts: Option<Vec<String>>,
+    /// `MCP_ALLOWED_HOSTS` was not set.
+    pub allowed_hosts_default: bool,
 }
 
 #[derive(Debug)]
@@ -93,8 +96,10 @@ pub fn load(env: &Env) -> Result<Config, ConfigError> {
             "set exactly one of DOCS_REPO_URL and DOCS_LOCAL_PATH".into(),
         ));
     }
+    let allowed_raw = get("MCP_ALLOWED_HOSTS", env)?;
+    let allowed_hosts_default = allowed_raw.is_none();
     let allowed = list(Some(
-        get("MCP_ALLOWED_HOSTS", env)?.unwrap_or_else(|| "localhost,127.0.0.1,::1".into()),
+        allowed_raw.unwrap_or_else(|| "localhost,127.0.0.1,::1".into()),
     ));
     let or = |v: Option<String>, d: &str| v.unwrap_or_else(|| d.to_string());
     Ok(Config {
@@ -112,6 +117,7 @@ pub fn load(env: &Env) -> Result<Config, ConfigError> {
         .collect(),
         refresh_seconds: number("DOCS_REFRESH_SECONDS", env, 300)?,
         name: or(get("DOCS_NAME", env)?, "docs"),
+        language: get("DOCS_LANGUAGE", env)?,
         site_url: get("DOCS_SITE_URL", env)?,
         git_username: or(get("DOCS_GIT_USERNAME", env)?, "git"),
         git_token: get("DOCS_GIT_TOKEN", env)?,
@@ -132,5 +138,6 @@ pub fn load(env: &Env) -> Result<Config, ConfigError> {
                     .collect(),
             )
         },
+        allowed_hosts_default,
     })
 }

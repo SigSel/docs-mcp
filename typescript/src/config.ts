@@ -21,6 +21,7 @@ export interface Config {
   ignoreFields: Set<string>;
   refreshSeconds: number;
   name: string;
+  language: string | null;
   siteUrl: string | null;
   gitUsername: string;
   gitToken: string | null;
@@ -32,6 +33,8 @@ export interface Config {
   authToken: string | null;
   /** null means any host */
   allowedHosts: string[] | null;
+  /** MCP_ALLOWED_HOSTS was not set */
+  allowedHostsDefault: boolean;
 }
 
 type Env = Record<string, string | undefined>;
@@ -74,7 +77,8 @@ export function load(env: Env = process.env): Config {
   if (Boolean(repoUrl) === Boolean(localPath)) {
     throw new ConfigError('set exactly one of DOCS_REPO_URL and DOCS_LOCAL_PATH');
   }
-  const allowed = list(get('MCP_ALLOWED_HOSTS', env) ?? 'localhost,127.0.0.1,::1');
+  const allowedRaw = get('MCP_ALLOWED_HOSTS', env);
+  const allowed = list(allowedRaw ?? 'localhost,127.0.0.1,::1');
   return {
     repoUrl,
     localPath,
@@ -85,6 +89,7 @@ export function load(env: Env = process.env): Config {
     ignoreFields: new Set(list(get('DOCS_IGNORE_FIELDS', env) ?? DEFAULT_IGNORE_FIELDS)),
     refreshSeconds: int('DOCS_REFRESH_SECONDS', env, 300),
     name: get('DOCS_NAME', env) ?? 'docs',
+    language: get('DOCS_LANGUAGE', env),
     siteUrl: get('DOCS_SITE_URL', env),
     gitUsername: get('DOCS_GIT_USERNAME', env) ?? 'git',
     gitToken: get('DOCS_GIT_TOKEN', env),
@@ -95,5 +100,6 @@ export function load(env: Env = process.env): Config {
     port: int('MCP_PORT', env, 8080),
     authToken: get('MCP_AUTH_TOKEN', env),
     allowedHosts: allowed.includes('*') ? null : allowed.map((h) => h.toLowerCase().replace(/^\[|\]$/g, '')),
+    allowedHostsDefault: allowedRaw === null,
   };
 }

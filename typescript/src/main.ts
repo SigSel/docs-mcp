@@ -5,7 +5,7 @@ import { serve } from '@hono/node-server';
 
 import { ConfigError, load } from './config.js';
 import { log } from './log.js';
-import { buildApp } from './server.js';
+import { buildApp, startupWarnings } from './server.js';
 import { redact, Syncer } from './source.js';
 
 function main(): void {
@@ -26,6 +26,7 @@ function main(): void {
     `serving ${config.name} from ${source} (dir ${config.docsDir}) on ${config.host}:${config.port}, ` +
       `allowed hosts: ${config.allowedHosts?.join(',') ?? '*'}, auth: ${config.authToken ? 'bearer token' : 'none'}`,
   );
+  for (const warning of startupWarnings(config)) log.warning(warning);
   void syncer.runForever();
   const stop = (): void => {
     server.close();

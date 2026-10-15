@@ -26,6 +26,9 @@ FILES: dict[str, str | bytes] = {
     "only-front.md": "---\ntitle: Berre frontmatter\n---\n",
     "Ærlig/øl.md": "# Øl\n\nTekst om øl.\n",
     "UPPER.MD": "# Stor\n\nstorord\n",
+    "virtual-environments.md": "# Virtuelle miljø\n\nKvart prosjekt har sitt eige miljø.\n",
+    "lenkjer.md": "# Lenkjer\n\nSjå [denne sida](lenkjemaal.md) for meir.\n",
+    "stavemaate.md": "# Sikkerheit\n\nOm sikkerheit i avhengigheiter.\n",
     "headings.md": (
         "# Topp\n\n#Ikkje ein overskrift\n\n## Tom anker {#}\n\n## Dobbel  mellomrom\n\n### C# og F#\n\n"
         "## Emoji 🚀 test\n\n## Same\n\n## Same\n\n## Same-1\n\n###### Djup\n\n####### For djup\n"
@@ -38,9 +41,12 @@ PATHS = [
     "guide/index.md",
     "headings.md",
     "index.md",
+    "lenkjer.md",
     "only-front.md",
+    "stavemaate.md",
     "unclosed-fence.md",
     "unclosed-front.md",
+    "virtual-environments.md",
     "yaml11.md",
     "Ærlig/øl.md",
 ]
@@ -57,7 +63,7 @@ def edge(impl: str, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Server
             path.write_bytes(content)
         else:
             path.write_text(content)
-    s = start_server(impl, {"DOCS_LOCAL_PATH": str(docs)}, tmp)
+    s = start_server(impl, {"DOCS_LOCAL_PATH": str(docs), "DOCS_LANGUAGE": "Norwegian Nynorsk"}, tmp)
     yield s
     stop_server(s)
 
@@ -83,9 +89,12 @@ async def test_edge_titles(edge: Server) -> None:
         "guide/index.md": "guide",
         "headings.md": "Topp",
         "index.md": "testhandbok",
+        "lenkjer.md": "Lenkjer",
         "only-front.md": "Berre frontmatter",
+        "stavemaate.md": "Sikkerheit",
         "unclosed-fence.md": "Gjerde",
         "unclosed-front.md": "unclosed-front",
+        "virtual-environments.md": "Virtuelle miljø",
         "yaml11.md": "Y",
         "Ærlig/øl.md": "Øl",
     }
@@ -150,7 +159,7 @@ async def test_edge_unicode_path_and_root_index_url(edge: Server) -> None:
     assert p["index.md"]["url"] == f"{SITE_URL}/"
     assert p["guide/index.md"]["url"] == f"{SITE_URL}/guide/"
     overview = await edge.json("docs_overview")
-    assert overview["folders"] == [{"path": ".", "pages": 9}, {"path": "guide", "pages": 1}, {"path": "Ærlig", "pages": 1}]
+    assert overview["folders"] == [{"path": ".", "pages": 12}, {"path": "guide", "pages": 1}, {"path": "Ærlig", "pages": 1}]
 
 
 async def test_edge_globs_are_case_sensitive(edge: Server) -> None:
@@ -167,3 +176,55 @@ async def test_edge_limit_clamped(edge: Server) -> None:
     assert data["count"] == 1
     data = await edge.json("search_docs", {"query": "tekst", "limit": 999})
     assert data["count"] >= 2
+
+
+# --- language and matching (SPEC.md §5, §6) ------------------------------------
+
+
+async def test_edge_path_is_searchable(edge: Server) -> None:
+    hits = (await edge.json("search_docs", {"query": "virtual environments"}))["results"]
+    assert hits[0]["path"] == "virtual-environments.md"
+
+
+async def test_edge_link_urls_not_indexed(edge: Server) -> None:
+    assert (await edge.json("search_docs", {"query": "lenkjemaal"}))["count"] == 0
+    hits = (await edge.json("search_docs", {"query": "denne sida"}))["results"]
+    assert hits[0]["path"] == "lenkjer.md"
+    assert hits[0]["snippet"] == "Sjå denne sida for meir."
+    assert "[denne sida](lenkjemaal.md)" in await body(edge, "lenkjer.md")
+
+
+@pytest.mark.parametrize(
+    ("query", "found"),
+    [
+        ("sikkerhet", True),  # Bokmål for "sikkerheit": one letter missing
+        ("avhengigheter", True),  # one letter missing
+        ("sikkerheet", True),  # one letter replaced
+        ("ikkerheit", False),  # first letter differs
+        ("sikkerhaaet", False),  # two edits away
+        ("miljo", False),  # under 6 letters: no fuzzy match
+    ],
+)
+async def test_edge_one_edit_matches(edge: Server, query: str, found: bool) -> None:
+    hits = (await edge.json("search_docs", {"query": query}))["results"]
+    if found:
+        assert hits and hits[0]["path"] == "stavemaate.md"
+    else:
+        assert hits == []
+
+
+async def test_edge_language_in_instructions_and_descriptions(edge: Server) -> None:
+    async with edge.client() as client:
+        assert client.instructions is not None
+        assert client.instructions.startswith("Documentation for testhandbok, written in Norwegian Nynorsk.")
+        assert (
+            "Search with keywords in Norwegian Nynorsk, even when the user writes in another language, "
+            "and answer in the user's language." in client.instructions
+        )
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+    search = tools["search_docs"]
+    assert "keywords in Norwegian Nynorsk, whatever language the user writes in" in (search.description or "")
+    assert search.input_schema["properties"]["query"]["description"].startswith(
+        "Keywords to search for, in Norwegian Nynorsk. Add spelling variants"
+    )
+    assert (await edge.json("docs_overview"))["language"] == "Norwegian Nynorsk"

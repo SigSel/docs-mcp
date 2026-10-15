@@ -37,8 +37,8 @@ async def test_tools_listed_read_only(server: Server, mode: str) -> None:
 async def test_instructions_name_the_docs(server: Server, mode: str) -> None:
     async with server.client(mode) as client:
         assert client.instructions is not None
-        assert client.instructions.startswith("Documentation for testhandbok.")
-        assert "search_docs" in client.instructions
+        assert client.instructions.startswith("Documentation for testhandbok. Use search_docs")
+        assert "Search with keywords in the language of the documentation, even when" in client.instructions
 
 
 @pytest.mark.parametrize("mode", ["auto", "legacy"])
@@ -53,6 +53,7 @@ async def test_both_protocol_eras_get_the_same_answer(server: Server, mode: str)
 async def test_overview_counts_only_included_pages(server: Server) -> None:
     data = await server.json("docs_overview")
     assert data["name"] == "testhandbok"
+    assert data["language"] is None
     assert data["page_count"] == len(ALL_PATHS)
     assert data["folders"] == [
         {"path": ".", "pages": 1},

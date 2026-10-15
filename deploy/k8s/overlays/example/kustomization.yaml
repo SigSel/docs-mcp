@@ -22,6 +22,8 @@ configMapGenerator:
       - DOCS_REF=main
       - DOCS_DIR=src/content/docs
       - DOCS_NAME=dev-handbook
+      # The language the docs are written in; clients are told to search in it.
+      - DOCS_LANGUAGE=Norwegian Nynorsk
       - DOCS_SITE_URL=https://handbook.example.internal/dev-handbook/
       # Every name clients use to reach the service: the Service's DNS names and
       # the ingress host. Requests with any other Host header are refused.

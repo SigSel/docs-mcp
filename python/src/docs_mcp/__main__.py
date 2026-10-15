@@ -7,7 +7,7 @@ import logging
 import uvicorn
 
 from .config import load_or_exit
-from .server import build_app
+from .server import build_app, startup_warnings
 from .source import redact
 
 
@@ -26,6 +26,8 @@ def main() -> None:
         ",".join(config.allowed_hosts) if config.allowed_hosts is not None else "*",
         "bearer token" if config.auth_token else "none",
     )
+    for warning in startup_warnings(config):
+        logging.getLogger("docs_mcp").warning(warning)
     uvicorn.run(app, host=config.host, port=config.port, log_level="warning", proxy_headers=False)
 
 

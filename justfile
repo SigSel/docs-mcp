@@ -32,6 +32,14 @@ lint:
 compare docs=(handbook / "src/content/docs"): build
     cd conformance && uv run python compare.py {{ absolute_path(docs) }}
 
+# Search quality for Nynorsk, Bokmål and English questions (conformance/search_eval.json)
+eval impl="python" docs=(handbook / "src/content/docs"): (build impl)
+    cd conformance && uv run python search_eval.py {{ absolute_path(docs) }} --impl {{ impl }}
+
+# Image size, memory, startup and latency of each image; needs `just image` first
+measure path=handbook dir="src/content/docs":
+    cd conformance && uv run python measure.py {{ absolute_path(path) }} --dir {{ dir }}
+
 # Regenerate conformance/golden.json from the Python implementation; review the diff!
 golden: (build "python")
     cd conformance && uv run python golden.py python
@@ -41,7 +49,7 @@ run impl="rust" path=handbook dir="src/content/docs": (build impl)
     #!/usr/bin/env bash
     set -euo pipefail
     export DOCS_LOCAL_PATH="{{ absolute_path(path) }}" DOCS_DIR="{{ dir }}" DOCS_REFRESH_SECONDS=5
-    export DOCS_NAME="${DOCS_NAME:-$(basename "{{ absolute_path(path) }}")}"
+    export DOCS_NAME="${DOCS_NAME:-$(basename "{{ absolute_path(path) }}")}" DOCS_LANGUAGE="${DOCS_LANGUAGE:-Norwegian Nynorsk}"
     case {{ impl }} in
       rust) exec rust/target/release/docs-mcp ;;
       python) exec python/.venv/bin/docs-mcp ;;

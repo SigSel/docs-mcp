@@ -4,5 +4,6 @@ const line = (level: string, message: string): string => `${new Date().toISOStri
 
 export const log = {
   info: (message: string): void => console.log(line('INFO', message)),
+  warning: (message: string): void => console.error(line('WARNING', message)),
   error: (message: string): void => console.error(line('ERROR', message)),
 };

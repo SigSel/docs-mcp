@@ -14,6 +14,7 @@ x-local: &local
     DOCS_LOCAL_PATH: /docs
     DOCS_DIR: ${DOCS_DIR:-src/content/docs}
     DOCS_NAME: ${DOCS_NAME:-dev-handbook}
+    DOCS_LANGUAGE: ${DOCS_LANGUAGE:-Norwegian Nynorsk}
     DOCS_REFRESH_SECONDS: "5"
     MCP_ALLOWED_HOSTS: localhost,127.0.0.1
   volumes:
@@ -51,6 +52,7 @@ services:
     environment:
       DOCS_DIR: ${DOCS_DIR:-src/content/docs}
       DOCS_NAME: ${DOCS_NAME:-dev-handbook}
+      DOCS_LANGUAGE: ${DOCS_LANGUAGE:-Norwegian Nynorsk}
       MCP_ALLOWED_HOSTS: localhost,127.0.0.1
     read_only: true
     tmpfs: [/tmp]

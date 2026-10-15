@@ -30,6 +30,7 @@ class Config:
     ignore_fields: frozenset[str]
     refresh_seconds: int
     name: str
+    language: str | None
     site_url: str | None
     git_username: str
     git_token: str | None
@@ -40,6 +41,7 @@ class Config:
     port: int
     auth_token: str | None
     allowed_hosts: list[str] | None  # None means any host
+    allowed_hosts_default: bool  # MCP_ALLOWED_HOSTS was not set
 
 
 def _get(name: str, env: dict[str, str]) -> str | None:
@@ -78,7 +80,8 @@ def load(env: dict[str, str] | None = None) -> Config:
     local_path = _get("DOCS_LOCAL_PATH", env)
     if bool(repo_url) == bool(local_path):
         raise ConfigError("set exactly one of DOCS_REPO_URL and DOCS_LOCAL_PATH")
-    allowed = _list(_get("MCP_ALLOWED_HOSTS", env) or "localhost,127.0.0.1,::1")
+    allowed_raw = _get("MCP_ALLOWED_HOSTS", env)
+    allowed = _list(allowed_raw or "localhost,127.0.0.1,::1")
     return Config(
         repo_url=repo_url,
         local_path=Path(local_path) if local_path else None,
@@ -89,6 +92,7 @@ def load(env: dict[str, str] | None = None) -> Config:
         ignore_fields=frozenset(_list(_get("DOCS_IGNORE_FIELDS", env) or DEFAULT_IGNORE_FIELDS)),
         refresh_seconds=_int("DOCS_REFRESH_SECONDS", env, 300),
         name=_get("DOCS_NAME", env) or "docs",
+        language=_get("DOCS_LANGUAGE", env),
         site_url=_get("DOCS_SITE_URL", env),
         git_username=_get("DOCS_GIT_USERNAME", env) or "git",
         git_token=_get("DOCS_GIT_TOKEN", env),
@@ -99,6 +103,7 @@ def load(env: dict[str, str] | None = None) -> Config:
         port=_int("MCP_PORT", env, 8080),
         auth_token=_get("MCP_AUTH_TOKEN", env),
         allowed_hosts=None if "*" in allowed else [h.lower().strip("[]") for h in allowed],
+        allowed_hosts_default=allowed_raw is None,
     )
 
 

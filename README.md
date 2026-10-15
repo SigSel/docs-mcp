@@ -5,6 +5,10 @@ Markdown docs, such as the dev-handbook, to AI assistants: Claude Code, VS Code
 Copilot, Cursor, or anything else that speaks MCP. It clones a git repo, indexes
 the `.md`/`.mdx` files in one directory, keeps pulling, and answers over HTTP.
 
+It runs once, centrally, on the internal network. Users point their assistant
+at it; nobody runs it on their own machine. Running it locally is for
+developing docs-mcp and for previewing handbook changes.
+
 ```
 git repo (Azure DevOps, Forgejo, GitHub, …)
    │  clone, then pull every 5 min (or POST /refresh from a webhook)
@@ -33,6 +37,7 @@ docs-mcp**:
 | Add a rule with `### XX-123: … { #xx-123 }` | `get_section("XX-123")` finds it |
 | Use MDX components (`<Rule>`, `<Tabs>`, `<Card title=…>`) | Reduced to their text. Labels and titles become **bold** |
 | Switch framework (Starlight → VitePress, Docusaurus, Zensical…) | Point `DOCS_DIR` at the new folder. Presentation-only frontmatter is ignored |
+| Write it in English, or Bokmål, instead of Nynorsk | Change `DOCS_LANGUAGE` (see [Languages](#languages)) |
 
 That last row has been tested: the cross-implementation diff below ran against
 the Starlight, VitePress and Zensical variants.
@@ -45,15 +50,59 @@ the Starlight, VitePress and Zensical variants.
 | `read_doc(path, section?)` | A page, or one section of it, as clean Markdown with its metadata in a header |
 | `get_section(anchor)` | Jump straight to `rs-203`, `py-101`, or any heading anchor, across all pages |
 | `list_docs(path_prefix?, filters?)` | Browse pages with their metadata |
-| `docs_overview()` | Source, commit, folders, and every metadata field with its values |
+| `docs_overview()` | Source, commit, language, folders, and every metadata field with its values |
 
 All five are read-only. A typical exchange: *"Can I use unwrap in our Rust
 service?"* The assistant calls `search_docs("unwrap")` → `rust/rules.mdx#rs-203`,
 then `read_doc("rust/rules.mdx", "rs-203")`, and answers citing RS-203 with a
 link to the handbook page.
 
-## Quick start (local)
+## Languages
 
+The handbook can be written in Nynorsk, Bokmål or English, and users can ask in
+any of them. Two things make that work.
+
+**The assistant searches in the handbook's language.** Users never type search
+queries; their assistant writes them. Set `DOCS_LANGUAGE` to the language the
+docs are written in, for example `Norwegian Nynorsk`. The server then tells the
+assistant to:
+
+- search with keywords in that language, whatever language the user writes in;
+- add Bokmål spellings, synonyms and English terms as extra keywords;
+- answer in the user's language.
+
+Translating a question into keywords is something the assistant is good at.
+
+**Search bridges the rest without knowing any language:**
+
+- Words of 6+ letters match spellings one letter apart: `sikkerhet`/`sikkerheit`,
+  `regler`/`reglar`, `avhengigheter`/`avhengigheiter`.
+- A word matches longer words that start with it: `avhengigheit` →
+  `avhengigheiter`.
+- Page paths are searchable. They are often English even when the text is not:
+  `virtual-environments.mdx`, `glossary.mdx`.
+
+Measured on the dev-handbook with 36 questions, each asked four ways. The table
+shows how often the right page came first, and how often it was in the top 3:
+
+| The query is written in | First | Top 3 |
+|---|---|---|
+| Nynorsk | 83% | 92% |
+| Bokmål | 81% | 97% |
+| English, word for word | 67% | 81% |
+| Nynorsk keywords plus Bokmål and English variants: what the assistant writes when told the language | 86% | 97% |
+
+Before these changes, English was at 44% / 58%. Details and method are in
+[MEASUREMENTS.md](MEASUREMENTS.md#search-quality-across-languages); `just eval`
+reruns it.
+
+Leave `DOCS_LANGUAGE` unset and the assistant is told to search in "the language
+of the documentation", which it has to work out from the first results.
+
+## Try it locally
+
+For developing docs-mcp, or previewing handbook changes before they are pushed.
+Users connect to the central deployment instead (see [Deploying](#deploying)).
 Needs [just](https://just.systems), plus the toolchain for the implementation
 you run.
 
@@ -138,6 +187,36 @@ Without a webhook, it pulls every `DOCS_REFRESH_SECONDS` (default 300).
 
 ## Deploying
 
+### Before you deploy
+
+docs-mcp starts locked down. Two settings decide who can reach it, and it says
+at startup when either is still at its default:
+
+| Setting | Default | Set it to |
+|---|---|---|
+| `MCP_ALLOWED_HOSTS` | `localhost` only: a request addressed to any other host name gets `403` | Every name clients use: the ingress host, and in Kubernetes the Service names |
+| `MCP_AUTH_TOKEN` | Off: anyone who can reach the server can use it | A long random string. Clients send it as `Authorization: Bearer …` |
+
+Also set:
+
+- `DOCS_LANGUAGE`, see [Languages](#languages).
+- A **read-only** git token.
+
+What a deployment left at the defaults logs:
+
+```
+WARNING MCP_ALLOWED_HOSTS is not set: only requests addressed to localhost are accepted. Set it to the host names clients use.
+WARNING MCP_AUTH_TOKEN is not set: anyone who can reach this server can use it.
+WARNING refused a request for host 'docs-mcp.example.internal': it is not in MCP_ALLOWED_HOSTS
+```
+
+The last line appears once per host name that gets refused, so the log tells
+you what to add. The `403` response points at `MCP_ALLOWED_HOSTS` too. The
+`Host` check protects against DNS rebinding. `MCP_ALLOWED_HOSTS=*` turns it off
+(and is logged); only do that behind something else that checks.
+
+### Where it runs
+
 The images listen on 8080 and run as UID 10001, with a read-only root
 filesystem except `/tmp`. Endpoints:
 
@@ -147,46 +226,39 @@ filesystem except `/tmp`. Endpoints:
 
 | Where | How |
 |---|---|
-| Laptop | `deploy/compose.yaml` (profiles `rust`, `python`, `typescript`, `git`) |
+| Laptop, for development | `deploy/compose.yaml` (profiles `rust`, `python`, `typescript`, `git`) |
 | Kubernetes | `kubectl apply -k deploy/k8s/overlays/example`. Copy the overlay, then set image, repo, `MCP_ALLOWED_HOSTS` and `secrets.env` |
 | Azure Container Apps, AWS App Runner/ECS, a VM | Run the image with the env vars below. Ingress on port 8080, health check `/readyz` |
 
 ```sh
 podman run -d -p 8080:8080 --read-only --tmpfs /tmp \
   -e DOCS_REPO_URL=https://dev.azure.com/ORG/PROJECT/_git/dev-handbook \
-  -e DOCS_DIR=src/content/docs -e DOCS_NAME=dev-handbook \
+  -e DOCS_DIR=src/content/docs -e DOCS_NAME=dev-handbook -e DOCS_LANGUAGE="Norwegian Nynorsk" \
   -e DOCS_GIT_TOKEN_FILE=/run/secrets/pat -v ./pat:/run/secrets/pat:ro,z \
   -e MCP_AUTH_TOKEN=change-me -e MCP_ALLOWED_HOSTS=docs-mcp.example.internal \
   localhost/docs-mcp-rust:dev
 ```
 
-### Two settings people trip over
-
-- **`MCP_ALLOWED_HOSTS`** defaults to `localhost` only. Requests whose `Host`
-  header is anything else get `403`. This is DNS-rebinding protection. Set it to
-  every name clients use: the ingress host, and in Kubernetes the Service names.
-  `*` turns the check off; only do that behind something else that checks.
-- **`MCP_AUTH_TOKEN`** is off by default. On a shared network, set it. It guards
-  `/mcp` and `/refresh`.
-
 The full configuration list is in [SPEC.md §1](SPEC.md#1-configuration).
 
 ## Which implementation
 
-Measured on one laptop, each container serving the dev-handbook (55 pages).
-Most of every image is `git` and its dependencies:
+All three behave identically, byte for byte. They differ in what they cost to
+run (full table, method and machine in
+[MEASUREMENTS.md](MEASUREMENTS.md#container-footprint-and-latency)):
 
 | | Rust | Python | TypeScript |
 |---|---|---|---|
-| Image | 199 MB | 275 MB | 363 MB |
-| Memory, idle after indexing | 9 MB | 66 MB | 54 MB |
-| Start to ready | 0.7 s | 3.2 s | 1.0 s |
-| Source (lines) | 1638 | 889 | 966 |
+| Image size | 200 MB | 275 MB | 363 MB |
+| Start to ready | 0.5 s | 3.1 s | 0.9 s |
+| Memory, idle / after load | 10 / 11 MB | 67 / 67 MB | 55 / 115 MB |
+| search_docs, median | 4 ms | 11 ms | 10 ms |
+| Source (non-blank lines) | 1783 | 960 | 1044 |
 | SDK | rmcp 3.5 + axum | mcp 2.3 (`MCPServer`) + Starlette | @modelcontextprotocol/server 2.3 |
 
-They are interchangeable on the wire. Choose the language your team will keep
-fixing. Keep one. The other two have done their job once the choice is made,
-and the conformance suite and spec stay useful either way.
+Most of every image is `git` and its dependencies. Choose the language your
+team will keep fixing. The spec and the conformance suite stay useful whichever
+you keep.
 
 ## Repository layout
 
@@ -197,17 +269,22 @@ rust/ python/ typescript/
 conformance/       black-box pytest suite run against any implementation
   golden.json      exact expected outputs for fixtures/docs
   compare.py       diff all implementations against a real docs tree
+  search_eval.*    search quality across nn/nb/en questions (just eval)
+  measure.py       image size, memory, startup, latency (just measure)
 fixtures/docs/     small docs tree that exercises every rule in the spec
 deploy/            compose.yaml, k8s/ (kustomize base + example overlay)
-justfile           build, test, lint, run, compare, image
+MEASUREMENTS.md    the numbers above, with method and machine
+justfile           build, test, lint, run, compare, eval, image, measure
 ```
 
 ## Testing
 
 ```sh
-just test            # 111 checks × 3 implementations
+just test            # 126 checks × 3 implementations
 just compare         # every page, section and 180+ searches, diffed across all three
+just eval            # search quality for Nynorsk, Bokmål and English questions
 just lint            # clippy pedantic, ruff, tsc
+just image measure   # build the images, then measure them
 ```
 
 To change behaviour:
@@ -220,10 +297,11 @@ To change behaviour:
 
 ## Limits, on purpose
 
-- **Keyword search (BM25), not embeddings.** No model to host, results are
-  explainable, and it ranks the right page first for 18 of 23 hand-written test
-  queries on the handbook. It does not understand synonyms, or English
-  questions about Norwegian text.
+- **Keyword search (BM25), not embeddings.** No model to host, and results are
+  explainable. It does not know synonyms or translate. The assistant does that
+  when it writes the query (see [Languages](#languages)). If that turns out not
+  to be enough, multilingual embeddings are the next step, at the cost of
+  hosting a model.
 - **One source per server.** For several handbooks, run several containers.
 - **Tools only, no MCP resources or prompts.** The clients this is for use tools.
 - **HTML entities** such as `&nbsp;` are passed through as written.

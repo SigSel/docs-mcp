@@ -4,16 +4,21 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::LazyLock;
 
+use indexmap::IndexMap;
 use regex::Regex;
 use serde_json::{Map, Value, json};
 
-use crate::content::{MetaValue, Metadata, Page, Section, glob_to_regex, parse_page};
+use crate::content::{LINK, MetaValue, Metadata, Page, Section, glob_to_regex, parse_page};
 
 static TOKEN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[\p{L}\p{N}]+").expect("token regex"));
 const K1: f64 = 1.2;
 const B: f64 = 0.75;
 const MAX_PER_PAGE: usize = 3;
+const PREFIX_FACTOR: f64 = 0.5;
+const PREFIX_MIN_LEN: usize = 3;
+const FUZZY_FACTOR: f64 = 0.3;
+const FUZZY_MIN_LEN: usize = 6;
 
 /// Metadata filters: field name to one value or a list of values.
 pub type Filters = HashMap<String, FilterValue>;
@@ -81,14 +86,41 @@ pub fn discover(
     Ok(found)
 }
 
-pub fn page_url(site_url: Option<&str>, path: &str, anchor: Option<&str>) -> Option<String> {
-    let site = site_url.filter(|s| !s.is_empty())?;
+fn strip_extension(path: &str) -> &str {
     let file = path.rsplit('/').next().unwrap_or(path);
-    let mut route = if file.contains('.') {
-        &path[..path.rfind('.').unwrap()]
+    if file.contains('.') {
+        &path[..path.rfind('.').unwrap_or(path.len())]
     } else {
         path
+    }
+}
+
+/// A section's own text as search sees it: links count as their text, not their URL.
+fn search_text(page: &Page, section: &Section) -> String {
+    LINK.replace_all(&page.own_text(section), "$1").into_owned()
+}
+
+/// Levenshtein distance at most 1: one insertion, deletion or substitution (code points).
+fn within_one_edit(first: &[char], second: &[char]) -> bool {
+    let (short, long) = if first.len() <= second.len() {
+        (first, second)
+    } else {
+        (second, first)
     };
+    if long.len() - short.len() > 1 {
+        return false;
+    }
+    let same = short.iter().zip(long).take_while(|(x, y)| x == y).count();
+    if short.len() == long.len() {
+        short.get(same + 1..) == long.get(same + 1..)
+    } else {
+        short[same..] == long[same + 1..]
+    }
+}
+
+pub fn page_url(site_url: Option<&str>, path: &str, anchor: Option<&str>) -> Option<String> {
+    let site = site_url.filter(|s| !s.is_empty())?;
+    let mut route = strip_extension(path);
     if route == "index" {
         route = "";
     } else if let Some(r) = route.strip_suffix("/index") {
@@ -155,7 +187,7 @@ fn snippet(text: &str, terms: &HashSet<String>) -> String {
 struct Doc {
     page: usize,
     section: usize,
-    tf: HashMap<String, f64>,
+    tf: IndexMap<String, f64>,
     length: f64,
 }
 
@@ -164,7 +196,8 @@ pub struct DocIndex {
     by_path: HashMap<String, usize>,
     site_url: Option<String>,
     docs: Vec<Doc>,
-    postings: HashMap<String, Vec<usize>>,
+    /// Insertion-ordered, like the other implementations, so scores sum in the same order.
+    postings: IndexMap<String, Vec<usize>>,
     avgdl: f64,
 }
 
@@ -180,7 +213,7 @@ impl DocIndex {
             .map(|(i, p)| (p.path.clone(), i))
             .collect();
         let mut docs = Vec::new();
-        let mut postings: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut postings: IndexMap<String, Vec<usize>> = IndexMap::new();
         for (pi, page) in pages.iter().enumerate() {
             let tags: Vec<&str> = metadata_values(&page.metadata)
                 .map(String::as_str)
@@ -188,12 +221,13 @@ impl DocIndex {
                 .collect();
             let title_tokens = tokenize(&page.title);
             let tag_tokens = tokenize(&tags.join(" "));
+            let path_tokens = tokenize(strip_extension(&page.path));
             for (si, section) in page.sections.iter().enumerate() {
-                let own = page.own_text(section);
+                let own = search_text(page, section);
                 if section.level == 0 && own.trim().is_empty() {
                     continue;
                 }
-                let mut tf: HashMap<String, f64> = HashMap::new();
+                let mut tf: IndexMap<String, f64> = IndexMap::new();
                 let mut add = |term: &str, n: f64| *tf.entry(term.to_string()).or_default() += n;
                 for t in &title_tokens {
                     add(t, 2.0);
@@ -205,6 +239,9 @@ impl DocIndex {
                 }
                 for t in &tag_tokens {
                     add(t, 1.0);
+                }
+                for t in &path_tokens {
+                    add(t, 3.0);
                 }
                 for t in &tokenize(&own) {
                     add(t, 1.0);
@@ -316,6 +353,35 @@ impl DocIndex {
         json!({"count": pages.len(), "pages": pages})
     }
 
+    /// The vocabulary terms a query term matches, with their factors, in vocabulary order (SPEC.md §5).
+    fn matching_terms<'a>(&'a self, q: &'a str) -> Vec<(&'a str, f64)> {
+        let mut factors: Vec<(&str, f64)> = Vec::new();
+        if self.postings.contains_key(q) {
+            factors.push((q, 1.0));
+        }
+        let q_chars: Vec<char> = q.chars().collect();
+        if q_chars.len() >= PREFIX_MIN_LEN {
+            for term in self.postings.keys() {
+                if term != q && term.starts_with(q) {
+                    factors.push((term, PREFIX_FACTOR));
+                }
+            }
+        }
+        if q_chars.len() >= FUZZY_MIN_LEN {
+            let matched: HashSet<&str> = factors.iter().map(|(t, _)| *t).collect();
+            for term in self.postings.keys() {
+                if matched.contains(term.as_str()) || !term.starts_with(q_chars[0]) {
+                    continue;
+                }
+                let t_chars: Vec<char> = term.chars().collect();
+                if within_one_edit(&q_chars, &t_chars) {
+                    factors.push((term, FUZZY_FACTOR));
+                }
+            }
+        }
+        factors
+    }
+
     #[expect(
         clippy::cast_precision_loss,
         reason = "section counts are far below 2^52"
@@ -342,17 +408,7 @@ impl DocIndex {
         let mut scores = vec![0.0_f64; n];
         let mut matched_terms: HashSet<String> = HashSet::new();
         for q in &terms {
-            let mut factors: Vec<(&str, f64)> = Vec::new();
-            if self.postings.contains_key(q) {
-                factors.push((q, 1.0));
-            }
-            if q.chars().count() >= 3 {
-                for term in self.postings.keys() {
-                    if term != q && term.starts_with(q.as_str()) {
-                        factors.push((term, 0.5));
-                    }
-                }
-            }
+            let factors = self.matching_terms(q);
             if factors.is_empty() {
                 continue;
             }
@@ -414,7 +470,7 @@ impl DocIndex {
                 hit.insert("url".into(), json!(url));
             }
             hit.insert("score".into(), json!((scores[i] * 1000.0).round() / 1000.0));
-            let own = page.own_text(section);
+            let own = search_text(page, section);
             let text = if own.is_empty() {
                 section.heading.clone().unwrap_or_default()
             } else {

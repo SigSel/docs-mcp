@@ -26,6 +26,7 @@ reads the value from that file instead, trimmed, for secrets mounted as files
 | `DOCS_IGNORE_FIELDS` | see §4.2 | Comma-separated frontmatter keys that are presentation, not metadata. Setting it replaces the default list |
 | `DOCS_REFRESH_SECONDS` | `300` | How often to pull (git) or re-read (local). `0` turns it off |
 | `DOCS_NAME` | `docs` | Display name, used in the server instructions and `docs_overview` |
+| `DOCS_LANGUAGE` | | The language the docs are written in, as words a model understands: `Norwegian Nynorsk`, `English`. Tells clients which language to search in (§6) |
 | `DOCS_SITE_URL` | | Base URL of the rendered site. When set, results carry a `url` (§4.6) |
 | `DOCS_GIT_USERNAME` | `git` | Username for HTTPS token auth |
 | `DOCS_GIT_TOKEN` | | Token or PAT for HTTPS auth (`_FILE` supported) |
@@ -69,7 +70,16 @@ are turned off so all three behave the same. Health endpoints skip it, because
 Kubernetes probes use the pod IP.
 
 The host check runs before auth, so a bad host gets `403` even with a valid
-token.
+token. The `403` body names `MCP_ALLOWED_HOSTS`, and the first refusal of each
+host name (up to 100) is logged with that name, so an operator can see what to
+add.
+
+**Visible defaults.** At startup, each of these is logged as a warning:
+
+- `MCP_ALLOWED_HOSTS is not set: only requests addressed to localhost are
+  accepted. Set it to the host names clients use.`
+- `MCP_ALLOWED_HOSTS is '*': the Host header is not checked.`
+- `MCP_AUTH_TOKEN is not set: anyone who can reach this server can use it.`
 
 ## 3. Source sync
 
@@ -237,7 +247,7 @@ has any non-whitespace text.
 
 **Tokens.** Lowercase the text, take maximal runs of Unicode letters and
 numbers, and drop tokens shorter than 2 characters. There are no stop words and
-no stemming. `RS-203` becomes `rs`, `203`.
+no stemming, so nothing is tied to one language. `RS-203` becomes `rs`, `203`.
 
 **Weighted fields.** Each field's tokens are counted with a weight, and the
 weighted counts are summed into one term-frequency map per section. The sum of
@@ -245,21 +255,34 @@ all weights is the section length.
 
 | Field | Weight |
 |---|---|
+| page path, without its extension | 3 |
 | page title | 2 |
 | section heading (none for the intro) | 3 |
 | all metadata values, and the description | 1 |
 | section body | 1 |
 
 The section body is the section's own text, without its heading line and
-without its subsections' text. The intro's body is the text before the first
-heading.
+without its subsections' text, and with every `[text](url)` reduced to `text`:
+a link's URL names another page, not this one. The intro's body is the text
+before the first heading.
+
+The page path counts because file names are often the plainest description of
+a page, and are often in English even when the text is not
+(`virtual-environments.mdx`).
 
 **Query terms.** The query is tokenized the same way and duplicates are
 removed. Each query term `q` matches:
 
 - the vocabulary term `q` itself, with factor 1;
-- when `q` has at least 3 characters, every vocabulary term that starts with
-  `q`, with factor 0.5.
+- when `q` has at least 3 characters, every other vocabulary term that starts
+  with `q`, with factor 0.5;
+- when `q` has at least 6 characters, every vocabulary term not matched above
+  that starts with the same character and is one edit away (Levenshtein
+  distance 1: one character inserted, deleted or replaced), with factor 0.3.
+
+The last rule bridges spelling variants such as Nynorsk and Bokmål
+(`sikkerheit`/`sikkerhet`, `reglar`/`regler`) and typos, without knowing any
+language.
 
 The term frequency in section `d` is the sum of the factors times the term
 frequencies. The document frequency is the number of sections containing any
@@ -284,8 +307,8 @@ score   = Σ idf(q) · tf·(k1+1) / (tf + k1·(1 - b + b·len/avgdl))
 
 **Snippet.**
 
-1. Collapse whitespace in the section body (or the heading, if the body is
-   empty) to single spaces.
+1. Collapse whitespace in the section body as search sees it (links reduced to
+   their text), or the heading if the body is empty, to single spaces.
 2. Find the first case-insensitive occurrence of any matched term.
 3. Start 80 characters before it (or at 0) and take 240 characters.
 4. Prefix `…` when not starting at 0. Suffix `…` when cut.
@@ -303,24 +326,35 @@ All tools are read-only (`readOnlyHint: true`, `openWorldHint: false`) and
 return a single text content block. JSON output is compact UTF-8. A failure is
 a tool error (`isError: true`) whose text explains what to do instead.
 
-**Server instructions**, with `<name>` replaced by `DOCS_NAME`:
+**Language.** Users ask in whatever language they speak, but the client model
+writes the search query. So the server tells the model which language to search
+in. In the texts below:
 
-> Documentation for <name>. Use search_docs to find what is relevant to a
-> question, then read_doc to read a page or one of its sections. get_section
-> looks up a heading anchor or ID, such as a rule number, across all pages.
-> docs_overview lists the metadata fields and values you can filter on;
-> list_docs browses pages. Cite pages by path, or by url when present.
+- `{lang}` is `DOCS_LANGUAGE`, or `the language of the documentation` when it is
+  not set;
+- `{written}` is `, written in <DOCS_LANGUAGE>`, or nothing when it is not set;
+- `{name}` is `DOCS_NAME`.
+
+**Server instructions:**
+
+> Documentation for {name}{written}. Use search_docs to find what is relevant to
+> a question, then read_doc to read a page or one of its sections. Search with
+> keywords in {lang}, even when the user writes in another language, and answer
+> in the user's language. get_section looks up a heading anchor or ID, such as a
+> rule number, across all pages. docs_overview lists the metadata fields and
+> values you can filter on; list_docs browses pages. Cite pages by path, or by
+> url when present.
 
 **Descriptions.** Every implementation uses this exact text:
 
 | Tool or parameter | Description |
 |---|---|
-| `docs_overview` | Overview of the documentation: source and commit, page count, folders, and every metadata field with its values and page counts. Call it to learn which filters exist. |
+| `docs_overview` | Overview of the documentation: source and commit, language, page count, folders, and every metadata field with its values and page counts. Call it to learn which filters exist. |
 | `list_docs` | List pages with their path, title, url and metadata, optionally narrowed by path prefix and metadata filters. |
-| `search_docs` | Full-text search over every section of every page. Use a few distinctive keywords rather than a full sentence. Returns the best-matching sections with path, heading, anchor, url and a snippet; follow up with read_doc(path, section=anchor) for the full text. |
+| `search_docs` | Full-text search over every section of every page. Use a few distinctive keywords in {lang}, whatever language the user writes in, rather than a full sentence. Returns the best-matching sections with path, heading, anchor, url and a snippet; follow up with read_doc(path, section=anchor) for the full text. |
 | `read_doc` | Read a page as Markdown, with its metadata in a header. Pass section (an anchor or heading text) to read just that section and its subsections. |
 | `get_section` | Look up a section by its heading anchor or ID across all pages, for example a rule number such as 'RS-203'. |
-| `query` | Keywords to search for. Case-insensitive; words of 3+ letters also match longer words that start with them. |
+| `query` | Keywords to search for, in {lang}. Add spelling variants, synonyms and English terms freely: keywords that do not occur are ignored. Case-insensitive; words of 3+ letters also match longer words that start with them, and words of 6+ letters also match spellings one letter off. |
 | `filters` | Metadata filters: field name to a value or a list of values (any of them matches). docs_overview lists the fields and their values. |
 | `path_prefix` | Only pages whose path starts with this, e.g. 'python/'. |
 | `limit` | Maximum number of results, 1-50. Default 10. |
@@ -332,6 +366,7 @@ a tool error (`isError: true`) whose text explains what to do instead.
 
 ```json
 {"name":"dev-handbook",
+ "language":"Norwegian Nynorsk",
  "source":{"type":"git","repo":"https://…","ref":"main","dir":"src/content/docs","commit":"…","synced_at":"…"},
  "page_count":55,
  "folders":[{"path":".","pages":2},{"path":"python","pages":30}],
@@ -340,6 +375,7 @@ a tool error (`isError: true`) whose text explains what to do instead.
 
 - **`source`:** for a local source, `source` is
   `{"type":"local","path":…,"dir":…,"commit":null,"synced_at":…}`.
+- **`language`:** `DOCS_LANGUAGE`, or `null` when unset.
 - **`ref`:** `null` when unset.
 - **`folders`:** each page's first path segment, with `.` for pages at the root,
   sorted.

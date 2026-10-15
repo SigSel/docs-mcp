@@ -9,8 +9,8 @@ use serde::Serialize;
 use yaml_rust2::{Yaml, YamlLoader};
 
 macro_rules! re {
-    ($name:ident, $pattern:expr) => {
-        static $name: LazyLock<Regex> =
+    ($vis:vis $name:ident, $pattern:expr) => {
+        $vis static $name: LazyLock<Regex> =
             LazyLock::new(|| Regex::new($pattern).expect("valid regex"));
     };
 }
@@ -25,7 +25,7 @@ re!(TITLE_ATTR, r#"\btitle\s*=\s*(?:"([^"]*)"|'([^']*)')"#);
 re!(HEADING, r"^(#{1,6})[ \t]+(.*)$");
 re!(HEADING_ATTR, r"\s*\{\s*#([A-Za-z0-9_-]+)[^}]*\}\s*$");
 re!(CLOSING_HASHES, r"(^|\s+)#+\s*$");
-re!(LINK, r"\[([^\]]*)\]\([^)]*\)");
+re!(pub LINK, r"\[([^\]]*)\]\([^)]*\)");
 re!(PLACEHOLDER, r"\x00(\d+)\x00");
 re!(NOT_SLUG_CHAR, r"[^\p{L}\p{N} _-]");
 

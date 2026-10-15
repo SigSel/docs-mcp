@@ -3,12 +3,16 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { globToRegex, type Metadata, type MetaValue, type Page, parsePage, type Section } from './content.js';
+import { globToRegex, LINK, type Metadata, type MetaValue, type Page, parsePage, type Section } from './content.js';
 
 const TOKEN = /[\p{L}\p{N}]+/gu;
 const K1 = 1.2;
 const B = 0.75;
 const MAX_PER_PAGE = 3;
+const PREFIX_FACTOR = 0.5;
+const PREFIX_MIN_LEN = 3;
+const FUZZY_FACTOR = 0.3;
+const FUZZY_MIN_LEN = 6;
 
 export type Filters = Record<string, string | string[]> | undefined | null;
 
@@ -56,10 +60,28 @@ export function discover(root: string, include: string[], exclude: string[]): st
   return found.sort(compare);
 }
 
+function stripExtension(path: string): string {
+  const file = path.slice(path.lastIndexOf('/') + 1);
+  return file.includes('.') ? path.slice(0, path.lastIndexOf('.')) : path;
+}
+
+/** A section's own text as search sees it: links count as their text, not their URL. */
+const searchText = (page: Page, section: Section): string => page.ownText(section).replace(LINK, '$1');
+
+/** Levenshtein distance at most 1: one insertion, deletion or substitution (code points). */
+function withinOneEdit(x: string[], y: string[]): boolean {
+  const [a, b] = x.length <= y.length ? [x, y] : [y, x];
+  if (b.length - a.length > 1) return false;
+  let i = 0;
+  while (i < a.length && a[i] === b[i]) i++;
+  const skip = a.length === b.length ? 1 : 0;
+  for (let j = i + skip; j < a.length; j++) if (a[j] !== b[j + 1 - skip]) return false;
+  return true;
+}
+
 export function pageUrl(siteUrl: string | null, path: string, anchor: string | null = null): string | null {
   if (!siteUrl) return null;
-  const file = path.slice(path.lastIndexOf('/') + 1);
-  let route = file.includes('.') ? path.slice(0, path.lastIndexOf('.')) : path;
+  let route = stripExtension(path);
   if (route === 'index') route = '';
   else if (route.endsWith('/index')) route = route.slice(0, -'/index'.length);
   const url = `${siteUrl.replace(/\/+$/, '')}/${route ? `${route}/` : ''}`;
@@ -117,6 +139,7 @@ export class DocIndex {
       const tags = [...[...page.metadata.values()].flatMap(values), page.description ?? ''].join(' ');
       const titleTokens = tokenize(page.title);
       const tagTokens = tokenize(tags);
+      const pathTokens = tokenize(stripExtension(page.path));
       page.sections.forEach((section, order) => {
         if (section.level === 0 && !page.ownText(section).trim()) return;
         const tf = new Map<string, number>();
@@ -126,7 +149,8 @@ export class DocIndex {
         for (const t of titleTokens) add(t, 2);
         if (section.heading) for (const t of tokenize(section.heading)) add(t, 3);
         for (const t of tagTokens) add(t, 1);
-        for (const t of tokenize(page.ownText(section))) add(t, 1);
+        for (const t of pathTokens) add(t, 3);
+        for (const t of tokenize(searchText(page, section))) add(t, 1);
         let length = 0;
         for (const n of tf.values()) length += n;
         const id = this.docs.length;
@@ -204,8 +228,16 @@ export class DocIndex {
     for (const q of terms) {
       const factors = new Map<string, number>();
       if (this.postings.has(q)) factors.set(q, 1);
-      if ([...q].length >= 3) {
-        for (const term of this.postings.keys()) if (term !== q && term.startsWith(q)) factors.set(term, 0.5);
+      const qChars = [...q];
+      if (qChars.length >= PREFIX_MIN_LEN) {
+        for (const term of this.postings.keys()) if (term !== q && term.startsWith(q)) factors.set(term, PREFIX_FACTOR);
+      }
+      if (qChars.length >= FUZZY_MIN_LEN) {
+        for (const term of this.postings.keys()) {
+          if (factors.has(term)) continue;
+          const tChars = [...term];
+          if (tChars[0] === qChars[0] && withinOneEdit(qChars, tChars)) factors.set(term, FUZZY_FACTOR);
+        }
       }
       if (factors.size === 0) continue;
       for (const t of factors.keys()) matchedTerms.add(t);
@@ -246,7 +278,7 @@ export class DocIndex {
       const url = pageUrl(this.siteUrl, doc.page.path, section.anchor);
       if (url !== null) hit.url = url;
       hit.score = Math.round(scores[i]! * 1000) / 1000;
-      hit.snippet = snippet(doc.page.ownText(section) || (section.heading ?? ''), matchedTerms);
+      hit.snippet = snippet(searchText(doc.page, section) || (section.heading ?? ''), matchedTerms);
       results.push(hit);
       if (results.length >= max) break;
     }

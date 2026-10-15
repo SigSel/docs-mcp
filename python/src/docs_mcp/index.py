@@ -10,11 +10,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .content import Metadata, Page, Section, glob_to_regex, parse_page
+from .content import LINK, Metadata, Page, Section, glob_to_regex, parse_page
 
 TOKEN = re.compile(r"[^\W_]+")
 K1, B = 1.2, 0.75
 MAX_PER_PAGE = 3
+PREFIX_FACTOR, PREFIX_MIN_LEN = 0.5, 3
+FUZZY_FACTOR, FUZZY_MIN_LEN = 0.3, 6
 
 
 class ToolFailure(Exception):
@@ -41,7 +43,7 @@ def discover(root: Path, include: list[str], exclude: list[str]) -> list[str]:
 def page_url(site_url: str | None, path: str, anchor: str | None = None) -> str | None:
     if not site_url:
         return None
-    route = path.rsplit(".", 1)[0] if "." in path.rsplit("/", 1)[-1] else path
+    route = _strip_extension(path)
     if route == "index":
         route = ""
     elif route.endswith("/index"):
@@ -87,6 +89,7 @@ class DocIndex:
         for page in pages:
             tags = " ".join([*metadata_values(page.metadata), page.description or ""])
             title_tf, tags_tf = Counter(tokenize(page.title)), Counter(tokenize(tags))
+            path_tf = Counter(tokenize(_strip_extension(page.path)))
             for order, section in enumerate(page.sections):
                 if section.level == 0 and not page.own_text(section).strip():
                     continue
@@ -98,7 +101,9 @@ class DocIndex:
                         tf[term] += 3
                 for term, n in tags_tf.items():
                     tf[term] += n
-                for term in tokenize(page.own_text(section)):
+                for term, n in path_tf.items():
+                    tf[term] += 3 * n
+                for term in tokenize(_search_text(page, section)):
                     tf[term] += 1
                 doc_id = len(self.docs)
                 self.docs.append(_Doc(page, section, order, tf, float(sum(tf.values()))))
@@ -165,10 +170,14 @@ class DocIndex:
         matched_terms: set[str] = set()
         for q in terms:
             factors = {q: 1.0} if q in self.postings else {}
-            if len(q) >= 3:
+            if len(q) >= PREFIX_MIN_LEN:
                 for term in self.postings:
                     if term != q and term.startswith(q):
-                        factors[term] = 0.5
+                        factors[term] = PREFIX_FACTOR
+            if len(q) >= FUZZY_MIN_LEN:
+                for term in self.postings:
+                    if term not in factors and term[0] == q[0] and _within_one_edit(q, term):
+                        factors[term] = FUZZY_FACTOR
             if not factors:
                 continue
             matched_terms.update(factors)
@@ -202,7 +211,7 @@ class DocIndex:
             if (url := page_url(self.site_url, doc.page.path, section.anchor)) is not None:
                 hit["url"] = url
             hit["score"] = round(scores[i], 3)
-            hit["snippet"] = _snippet(doc.page.own_text(section) or (section.heading or ""), matched_terms)
+            hit["snippet"] = _snippet(_search_text(doc.page, section) or (section.heading or ""), matched_terms)
             results.append(hit)
             if len(results) >= limit:
                 break
@@ -262,6 +271,29 @@ class DocIndex:
             header.append(f"{key}: {_collapse(value if isinstance(value, str) else ', '.join(value))}")
         body = page.section_text(section) if section is not None else page.body
         return "---\n" + "\n".join(header) + "\n---\n\n" + body
+
+
+def _within_one_edit(a: str, b: str) -> bool:
+    """Levenshtein distance at most 1: one insertion, deletion or substitution (code points)."""
+    if abs(len(a) - len(b)) > 1:
+        return False
+    if len(a) > len(b):
+        a, b = b, a
+    i = 0
+    while i < len(a) and a[i] == b[i]:
+        i += 1
+    if len(a) == len(b):
+        return a[i + 1 :] == b[i + 1 :]
+    return a[i:] == b[i + 1 :]
+
+
+def _strip_extension(path: str) -> str:
+    return path.rsplit(".", 1)[0] if "." in path.rsplit("/", 1)[-1] else path
+
+
+def _search_text(page: Page, section: Section) -> str:
+    """A section's own text as search sees it: links count as their text, not their URL."""
+    return LINK.sub(r"\1", page.own_text(section))
 
 
 def _snippet(text: str, terms: set[str]) -> str:

@@ -56,6 +56,9 @@ async fn main() -> anyhow::Result<()> {
             "none"
         },
     );
+    for warning in server::startup_warnings(&config) {
+        tracing::warn!("{warning}");
+    }
     tokio::spawn(syncer.clone().run_forever());
     axum::serve(listener, server::app(config, syncer))
         .with_graceful_shutdown(shutdown())

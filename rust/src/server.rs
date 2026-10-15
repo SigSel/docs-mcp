@@ -1,6 +1,7 @@
 //! The MCP tools and the HTTP app around them (SPEC.md §2, §6).
 
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 
 use axum::Router;
 use axum::body::Body;
@@ -23,25 +24,28 @@ use crate::config::Config;
 use crate::index::{DocIndex, Filters, ToolFailure};
 use crate::source::Syncer;
 
-const INSTRUCTIONS: &str = "Documentation for {name}. Use search_docs to find what is relevant to a question, then \
-read_doc to read a page or one of its sections. get_section looks up a heading anchor or ID, such as a rule number, \
-across all pages. docs_overview lists the metadata fields and values you can filter on; list_docs browses pages. \
-Cite pages by path, or by url when present.";
+const INSTRUCTIONS: &str = "Documentation for {name}{written}. Use search_docs to find what is relevant to a \
+question, then read_doc to read a page or one of its sections. Search with keywords in {lang}, even when the user \
+writes in another language, and answer in the user's language. get_section looks up a heading anchor or ID, such as \
+a rule number, across all pages. docs_overview lists the metadata fields and values you can filter on; list_docs \
+browses pages. Cite pages by path, or by url when present.";
 
-// Tool and parameter descriptions: the same text in every implementation (SPEC.md §6).
-const DOCS_OVERVIEW: &str = "Overview of the documentation: source and commit, page count, folders, and every metadata \
-field with its values and page counts. Call it to learn which filters exist.";
+// Tool and parameter descriptions: the same text in every implementation (SPEC.md §6). `{lang}` is replaced at
+// startup with DOCS_LANGUAGE, or "the language of the documentation" when it is not set (see `localize`).
+const DOCS_OVERVIEW: &str = "Overview of the documentation: source and commit, language, page count, folders, and \
+every metadata field with its values and page counts. Call it to learn which filters exist.";
 const LIST_DOCS: &str = "List pages with their path, title, url and metadata, optionally narrowed by path prefix and \
 metadata filters.";
-const SEARCH_DOCS: &str = "Full-text search over every section of every page. Use a few distinctive keywords rather \
-than a full sentence. Returns the best-matching sections with path, heading, anchor, url and a snippet; follow up \
-with read_doc(path, section=anchor) for the full text.";
+const SEARCH_DOCS: &str = "Full-text search over every section of every page. Use a few distinctive keywords in \
+{lang}, whatever language the user writes in, rather than a full sentence. Returns the best-matching sections with \
+path, heading, anchor, url and a snippet; follow up with read_doc(path, section=anchor) for the full text.";
 const READ_DOC: &str = "Read a page as Markdown, with its metadata in a header. Pass section (an anchor or heading \
 text) to read just that section and its subsections.";
 const GET_SECTION: &str = "Look up a section by its heading anchor or ID across all pages, for example a rule number \
 such as 'RS-203'.";
-const QUERY: &str = "Keywords to search for. Case-insensitive; words of 3+ letters also match longer words that start \
-with them.";
+const QUERY: &str = "Keywords to search for, in {lang}. Add spelling variants, synonyms and English terms freely: \
+keywords that do not occur are ignored. Case-insensitive; words of 3+ letters also match longer words that start with \
+them, and words of 6+ letters also match spellings one letter off.";
 const FILTERS: &str = "Metadata filters: field name to a value or a list of values (any of them matches). \
 docs_overview lists the fields and their values.";
 const PATH_PREFIX: &str = "Only pages whose path starts with this, e.g. 'python/'.";
@@ -88,8 +92,8 @@ pub struct SectionArgs {
 #[derive(Clone)]
 pub struct DocsServer {
     syncer: Arc<Syncer>,
-    name: String,
-    #[expect(dead_code, reason = "read by the code #[tool_handler] generates")]
+    config: Arc<Config>,
+    /// The tools with the configured language in their descriptions; `#[tool_handler]` serves this one.
     tool_router: ToolRouter<Self>,
 }
 
@@ -114,11 +118,12 @@ impl DocsServer {
 
 #[tool_router]
 impl DocsServer {
-    pub fn new(syncer: Arc<Syncer>, name: String) -> Self {
+    pub fn new(syncer: Arc<Syncer>, config: Arc<Config>) -> Self {
+        let tool_router = localize(Self::tool_router(), &language(&config));
         Self {
             syncer,
-            name,
-            tool_router: Self::tool_router(),
+            config,
+            tool_router,
         }
     }
 
@@ -127,7 +132,8 @@ impl DocsServer {
     async fn docs_overview(&self) -> CallToolResult {
         self.run(|ix| {
             let mut out = serde_json::Map::new();
-            out.insert("name".into(), self.name.clone().into());
+            out.insert("name".into(), self.config.name.clone().into());
+            out.insert("language".into(), self.config.language.clone().into());
             out.insert("source".into(), self.syncer.source_info());
             out.extend(ix.overview());
             Ok(serde_json::Value::Object(out).to_string())
@@ -171,19 +177,81 @@ impl DocsServer {
     }
 }
 
-#[tool_handler]
+#[tool_handler(router = self.tool_router)]
 impl ServerHandler for DocsServer {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("docs-mcp", env!("CARGO_PKG_VERSION")))
-            .with_instructions(INSTRUCTIONS.replace("{name}", &self.name))
+            .with_instructions(instructions(&self.config))
     }
+}
+
+/// `{lang}` in the descriptions and instructions (SPEC.md §6).
+fn language(config: &Config) -> String {
+    config
+        .language
+        .clone()
+        .unwrap_or_else(|| "the language of the documentation".into())
+}
+
+fn instructions(config: &Config) -> String {
+    let written = config
+        .language
+        .as_ref()
+        .map(|l| format!(", written in {l}"))
+        .unwrap_or_default();
+    INSTRUCTIONS
+        .replace("{name}", &config.name)
+        .replace("{written}", &written)
+        .replace("{lang}", &language(config))
+}
+
+/// Puts the configured language into the tool and parameter descriptions.
+fn localize(mut router: ToolRouter<DocsServer>, lang: &str) -> ToolRouter<DocsServer> {
+    fn replace(value: &mut serde_json::Value, lang: &str) {
+        match value {
+            serde_json::Value::String(s) if s.contains("{lang}") => *s = s.replace("{lang}", lang),
+            serde_json::Value::Array(items) => items.iter_mut().for_each(|v| replace(v, lang)),
+            serde_json::Value::Object(map) => map.values_mut().for_each(|v| replace(v, lang)),
+            _ => {}
+        }
+    }
+    for route in router.map.values_mut() {
+        if let Some(d) = &route.attr.description {
+            route.attr.description = Some(d.replace("{lang}", lang).into());
+        }
+        let mut schema = serde_json::Value::Object((*route.attr.input_schema).clone());
+        replace(&mut schema, lang);
+        if let serde_json::Value::Object(map) = schema {
+            route.attr.input_schema = Arc::new(map);
+        }
+    }
+    router
+}
+
+/// The defaults an operator should know they are running with (SPEC.md §2).
+pub fn startup_warnings(config: &Config) -> Vec<&'static str> {
+    let mut warnings = Vec::new();
+    if config.allowed_hosts_default {
+        warnings.push(
+            "MCP_ALLOWED_HOSTS is not set: only requests addressed to localhost are accepted. \
+             Set it to the host names clients use.",
+        );
+    } else if config.allowed_hosts.is_none() {
+        warnings.push("MCP_ALLOWED_HOSTS is '*': the Host header is not checked.");
+    }
+    if config.auth_token.is_none() {
+        warnings.push("MCP_AUTH_TOKEN is not set: anyone who can reach this server can use it.");
+    }
+    warnings
 }
 
 #[derive(Clone)]
 struct AppState {
     syncer: Arc<Syncer>,
     config: Arc<Config>,
+    /// Host names already logged as refused, so a scanner cannot flood the log.
+    refused: Arc<Mutex<HashSet<String>>>,
 }
 
 fn hostname(host: &str) -> String {
@@ -204,8 +272,19 @@ async fn guard(State(state): State<AppState>, request: Request, next: Next) -> R
                 .get(header::HOST)
                 .and_then(|h| h.to_str().ok())
                 .unwrap_or("");
-            if !allowed.contains(&hostname(host)) {
-                return (StatusCode::FORBIDDEN, "Forbidden: host not allowed\n").into_response();
+            let host = hostname(host);
+            if !allowed.contains(&host) {
+                let mut refused = state.refused.lock().unwrap();
+                if refused.len() < 100 && refused.insert(host.clone()) {
+                    tracing::warn!(
+                        "refused a request for host '{host}': it is not in MCP_ALLOWED_HOSTS"
+                    );
+                }
+                return (
+                    StatusCode::FORBIDDEN,
+                    "Forbidden: host not allowed (see MCP_ALLOWED_HOSTS)\n",
+                )
+                    .into_response();
             }
         }
         if let Some(token) = &state.config.auth_token {
@@ -251,7 +330,7 @@ async fn refresh(State(state): State<AppState>) -> Response {
 }
 
 pub fn app(config: Arc<Config>, syncer: Arc<Syncer>) -> Router {
-    let server = DocsServer::new(syncer.clone(), config.name.clone());
+    let server = DocsServer::new(syncer.clone(), config.clone());
     let mcp = StreamableHttpService::new(
         move || Ok(server.clone()),
         Arc::new(LocalSessionManager::default()),
@@ -260,7 +339,11 @@ pub fn app(config: Arc<Config>, syncer: Arc<Syncer>) -> Router {
             .with_json_response(true)
             .disable_allowed_hosts(),
     );
-    let state = AppState { syncer, config };
+    let state = AppState {
+        syncer,
+        config,
+        refused: Arc::default(),
+    };
     Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))

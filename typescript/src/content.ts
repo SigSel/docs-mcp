@@ -15,7 +15,7 @@ const TITLE_ATTR = /\btitle\s*=\s*(?:"([^"]*)"|'([^']*)')/;
 export const HEADING = /^(#{1,6})[ \t]+(.*)$/;
 const HEADING_ATTR = /\s*\{\s*#([A-Za-z0-9_-]+)[^}]*\}\s*$/;
 const CLOSING_HASHES = /(^|\s+)#+\s*$/;
-const LINK = /\[([^\]]*)\]\([^)]*\)/g;
+export const LINK = /\[([^\]]*)\]\([^)]*\)/g;
 const PLACEHOLDER = /\u0000(\d+)\u0000/g;
 
 export interface Section {

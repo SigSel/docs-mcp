@@ -1,7 +1,7 @@
 {
   "tools": {
     "docs_overview": {
-      "description": "Overview of the documentation: source and commit, page count, folders, and every metadata field with its values and page counts. Call it to learn which filters exist.",
+      "description": "Overview of the documentation: source and commit, language, page count, folders, and every metadata field with its values and page counts. Call it to learn which filters exist.",
       "params": {},
       "required": []
     },
@@ -33,9 +33,9 @@
       ]
     },
     "search_docs": {
-      "description": "Full-text search over every section of every page. Use a few distinctive keywords rather than a full sentence. Returns the best-matching sections with path, heading, anchor, url and a snippet; follow up with read_doc(path, section=anchor) for the full text.",
+      "description": "Full-text search over every section of every page. Use a few distinctive keywords in the language of the documentation, whatever language the user writes in, rather than a full sentence. Returns the best-matching sections with path, heading, anchor, url and a snippet; follow up with read_doc(path, section=anchor) for the full text.",
       "params": {
-        "query": "Keywords to search for. Case-insensitive; words of 3+ letters also match longer words that start with them.",
+        "query": "Keywords to search for, in the language of the documentation. Add spelling variants, synonyms and English terms freely: keywords that do not occur are ignored. Case-insensitive; words of 3+ letters also match longer words that start with them, and words of 6+ letters also match spellings one letter off.",
         "filters": "Metadata filters: field name to a value or a list of values (any of them matches). docs_overview lists the fields and their values.",
         "path_prefix": "Only pages whose path starts with this, e.g. 'python/'.",
         "limit": "Maximum number of results, 1-50. Default 10."
@@ -47,6 +47,7 @@
   },
   "overview": {
     "name": "testhandbok",
+    "language": null,
     "source": {
       "type": "local",
       "dir": ".",
@@ -224,7 +225,7 @@
           "section": "RS-201: clippy pedantic, åtvaringar avviste i CI",
           "anchor": "rs-201",
           "url": "https://docs.example/handbook/rust/rules/#rs-201",
-          "score": 3.25,
+          "score": 3.341,
           "snippet": "MÅ Applikasjon Clippy si `pedantic`-gruppe **MÅ** vere på, og CI **MÅ** køyre clippy med `-D warnings`. Typen `Vec<T>` står i kode og skal stå urørt. ```toml [workspace.lints.clippy] pedantic = { level = \"warn\", priority = -1 } ```"
         },
         {
@@ -233,7 +234,7 @@
           "section": "RS-203: Ingen unwrap i produksjonskode",
           "anchor": "rs-203",
           "url": "https://docs.example/handbook/rust/rules/#rs-203",
-          "score": 1.843,
+          "score": 1.972,
           "snippet": "… **MÅ IKKJE** kalle `unwrap()`. Bruk `?` og ein feiltype. **Linux** Køyr `cargo clippy` i terminalen. **Windows** Køyr `cargo clippy` i PowerShell. ```rust import_this_is_not_an_import(); export fn also_not_removed() {} let v: Vec<String> =…"
         }
       ]
@@ -248,7 +249,7 @@
           "section": "Oversikt",
           "anchor": "oversikt",
           "url": "https://docs.example/handbook/rust/rules/#oversikt",
-          "score": 4.33,
+          "score": 4.299,
           "snippet": "| Regel | Nivå | |---|---| | RS-201 | MÅ | | RS-203 | MÅ |"
         },
         {
@@ -257,7 +258,7 @@
           "section": "RS-203: Ingen unwrap i produksjonskode",
           "anchor": "rs-203",
           "url": "https://docs.example/handbook/rust/rules/#rs-203",
-          "score": 3.951,
+          "score": 4.179,
           "snippet": "…Linux** Køyr `cargo clippy` i terminalen. **Windows** Køyr `cargo clippy` i PowerShell. ```rust import_this_is_not_an_import(); export fn also_not_removed() {} let v: Vec<String> = Vec::new(); // <Badges> inni kode står att ``` :::kvifor[Kv…"
         },
         {
@@ -266,7 +267,7 @@
           "section": "RS-201: clippy pedantic, åtvaringar avviste i CI",
           "anchor": "rs-201",
           "url": "https://docs.example/handbook/rust/rules/#rs-201",
-          "score": 1.808,
+          "score": 1.888,
           "snippet": "MÅ Applikasjon Clippy si `pedantic`-gruppe **MÅ** vere på, og CI **MÅ** køyre clippy med `-D warnings`. Typen `Vec<T>` står i kode og skal stå urørt. ```toml [workspace.lints.clippy] pedantic = { level = \"warn\", priority = -1 } ```"
         },
         {
@@ -275,7 +276,7 @@
           "section": "Eksempel",
           "anchor": "eksempel-1",
           "url": "https://docs.example/handbook/rust/testing/#eksempel-1",
-          "score": 1.603,
+          "score": 1.584,
           "snippet": "Sjå `tests/api.rs` i malprosjektet."
         }
       ]
@@ -290,7 +291,7 @@
           "section": "Sjå regelen om unwrap",
           "anchor": "sjå-regelen-om-unwrap",
           "url": "https://docs.example/handbook/rust/testing/#sjå-regelen-om-unwrap",
-          "score": 3.427,
+          "score": 3.446,
           "snippet": "Testkode kan bruke `unwrap()` fritt."
         },
         {
@@ -299,7 +300,7 @@
           "section": "RS-203: Ingen unwrap i produksjonskode",
           "anchor": "rs-203",
           "url": "https://docs.example/handbook/rust/rules/#rs-203",
-          "score": 2.872,
+          "score": 2.994,
           "snippet": "MÅ IKKJE Produksjonskode **MÅ IKKJE** kalle `unwrap()`. Bruk `?` og ein feiltype. **Linux** Køyr `cargo clippy` i terminalen. **Windows** Køyr `cargo clippy` i PowerShell. ```rust import_this_is_not_an_import(); export fn also_not_removed()…"
         }
       ]
@@ -314,7 +315,7 @@
           "section": "Testing i Rust",
           "anchor": null,
           "url": "https://docs.example/handbook/rust/testing/",
-          "score": 1.401,
+          "score": 1.393,
           "snippet": "Testar er ein del av koden, ikkje eit tillegg."
         },
         {
@@ -323,7 +324,7 @@
           "section": "Eksempel",
           "anchor": "eksempel-1",
           "url": "https://docs.example/handbook/rust/testing/#eksempel-1",
-          "score": 1.054,
+          "score": 1.042,
           "snippet": "Sjå `tests/api.rs` i malprosjektet."
         },
         {
@@ -332,7 +333,7 @@
           "section": "Fixtures",
           "anchor": "fixtures",
           "url": "https://docs.example/handbook/rust/testing/#fixtures",
-          "score": 1.054,
+          "score": 1.042,
           "snippet": "Delte testdata ligg i `tests/fixtures/`."
         }
       ]
@@ -347,7 +348,7 @@
           "section": "Rust-reglane",
           "anchor": null,
           "url": "https://docs.example/handbook/rust/rules/",
-          "score": 0.859,
+          "score": 0.916,
           "snippet": "Dette er heile standarden for Rust."
         },
         {
@@ -356,7 +357,7 @@
           "section": "Eksempel",
           "anchor": "eksempel",
           "url": "https://docs.example/handbook/rust/testing/#eksempel",
-          "score": 0.834,
+          "score": 0.902,
           "snippet": "```rust #[test] fn adds() { assert_eq!(2 + 2, 4); } ```"
         },
         {
@@ -365,7 +366,7 @@
           "section": "Eksempel",
           "anchor": "eksempel-1",
           "url": "https://docs.example/handbook/rust/testing/#eksempel-1",
-          "score": 0.796,
+          "score": 0.888,
           "snippet": "Sjå `tests/api.rs` i malprosjektet."
         },
         {
@@ -374,7 +375,7 @@
           "section": "Fixtures",
           "anchor": "fixtures",
           "url": "https://docs.example/handbook/rust/testing/#fixtures",
-          "score": 0.796,
+          "score": 0.888,
           "snippet": "Delte testdata ligg i `tests/fixtures/`."
         },
         {
@@ -383,8 +384,17 @@
           "section": "Oversikt",
           "anchor": "oversikt",
           "url": "https://docs.example/handbook/rust/rules/#oversikt",
-          "score": 0.79,
+          "score": 0.885,
           "snippet": "| Regel | Nivå | |---|---| | RS-201 | MÅ | | RS-203 | MÅ |"
+        },
+        {
+          "path": "rust/rules.mdx",
+          "title": "Rust-reglane",
+          "section": "RS-201: clippy pedantic, åtvaringar avviste i CI",
+          "anchor": "rs-201",
+          "url": "https://docs.example/handbook/rust/rules/#rs-201",
+          "score": 0.771,
+          "snippet": "MÅ Applikasjon Clippy si `pedantic`-gruppe **MÅ** vere på, og CI **MÅ** køyre clippy med `-D warnings`. Typen `Vec<T>` står i kode og skal stå urørt. ```toml [workspace.lints.clippy] pedantic = { level = \"warn\", priority = -1 } ```"
         },
         {
           "path": "index.mdx",
@@ -392,17 +402,8 @@
           "section": "Testhandboka",
           "anchor": null,
           "url": "https://docs.example/handbook/",
-          "score": 0.742,
+          "score": 0.744,
           "snippet": "Velkomen til testhandboka. **Python** Alt om Python-prosjekt. **Rust** Alt om Rust-prosjekt."
-        },
-        {
-          "path": "rust/rules.mdx",
-          "title": "Rust-reglane",
-          "section": "RS-203: Ingen unwrap i produksjonskode",
-          "anchor": "rs-203",
-          "url": "https://docs.example/handbook/rust/rules/#rs-203",
-          "score": 0.623,
-          "snippet": "…r `cargo clippy` i terminalen. **Windows** Køyr `cargo clippy` i PowerShell. ```rust import_this_is_not_an_import(); export fn also_not_removed() {} let v: Vec<String> = Vec::new(); // <Badges> inni kode står att ``` :::kvifor[Kvifor ikkje …"
         }
       ]
     },
@@ -416,7 +417,7 @@
           "section": "Python",
           "anchor": null,
           "url": "https://docs.example/handbook/python/",
-          "score": 4.097,
+          "score": 3.998,
           "snippet": "Python-delen av handboka. Vi brukar uv og pyproject.toml."
         },
         {
@@ -425,7 +426,7 @@
           "section": "Samandrag",
           "anchor": "samandrag",
           "url": "https://docs.example/handbook/python/#samandrag",
-          "score": 3.962,
+          "score": 3.893,
           "snippet": "Start med uv. Alle prosjekt har ei pyproject.toml."
         },
         {
@@ -434,7 +435,7 @@
           "section": "uv – pakkehandsamar",
           "anchor": "uv--pakkehandsamar",
           "url": "https://docs.example/handbook/python/tools/uv/#uv--pakkehandsamar",
-          "score": 2.807,
+          "score": 2.917,
           "snippet": "uv erstattar pip, pip-tools og virtualenv. Installer med `curl` eller `winget`."
         },
         {
@@ -443,7 +444,7 @@
           "section": "Installasjon",
           "anchor": "installasjon",
           "url": "https://docs.example/handbook/python/tools/uv/#installasjon",
-          "score": 2.44,
+          "score": 2.801,
           "snippet": "Køyr installasjonsskriptet frå astral.sh."
         }
       ]
@@ -458,7 +459,7 @@
           "section": "Eksempel",
           "anchor": "eksempel-1",
           "url": "https://docs.example/handbook/rust/testing/#eksempel-1",
-          "score": 2.842,
+          "score": 2.826,
           "snippet": "Sjå `tests/api.rs` i malprosjektet."
         },
         {
@@ -467,7 +468,7 @@
           "section": "Eksempel",
           "anchor": "eksempel",
           "url": "https://docs.example/handbook/rust/testing/#eksempel",
-          "score": 2.819,
+          "score": 2.807,
           "snippet": "```rust #[test] fn adds() { assert_eq!(2 + 2, 4); } ```"
         },
         {
@@ -476,7 +477,7 @@
           "section": "Eksempel",
           "anchor": "eksempel",
           "url": "https://docs.example/handbook/workflow/containers/#eksempel",
-          "score": 2.819,
+          "score": 2.807,
           "snippet": "```dockerfile FROM gcr.io/distroless/static USER nonroot ```"
         }
       ]
@@ -491,7 +492,7 @@
           "section": "notes",
           "anchor": null,
           "url": "https://docs.example/handbook/python/notes/",
-          "score": 2.461,
+          "score": 2.276,
           "snippet": "Notat utan gyldig frontmatter. Ordet sjiraffkomponent finst berre her."
         }
       ]
@@ -506,7 +507,7 @@
           "section": "Kort sagt",
           "anchor": "samandrag",
           "url": "https://docs.example/handbook/workflow/containers/#samandrag",
-          "score": 4.581,
+          "score": 4.605,
           "snippet": "Bruk distroless eller slim-bilete, og køyr som ikkje-root."
         },
         {
@@ -515,7 +516,7 @@
           "section": "Eksempel",
           "anchor": "eksempel",
           "url": "https://docs.example/handbook/workflow/containers/#eksempel",
-          "score": 2.199,
+          "score": 2.181,
           "snippet": "```dockerfile FROM gcr.io/distroless/static USER nonroot ```"
         }
       ]
@@ -530,7 +531,7 @@
           "section": "RS-203: Ingen unwrap i produksjonskode",
           "anchor": "rs-203",
           "url": "https://docs.example/handbook/rust/rules/#rs-203",
-          "score": 3.473,
+          "score": 3.692,
           "snippet": "MÅ IKKJE Produksjonskode **MÅ IKKJE** kalle `unwrap()`. Bruk `?` og ein feiltype. **Linux** Køyr `cargo clippy` i terminalen. **Windows** Køyr `cargo clippy` i PowerShell. ```rust import_this_is_not_an_import(); export fn also_not_removed()…"
         },
         {
@@ -539,7 +540,7 @@
           "section": "Oversikt",
           "anchor": "oversikt",
           "url": "https://docs.example/handbook/rust/rules/#oversikt",
-          "score": 2.49,
+          "score": 2.476,
           "snippet": "| Regel | Nivå | |---|---| | RS-201 | MÅ | | RS-203 | MÅ |"
         },
         {
@@ -548,7 +549,7 @@
           "section": "RS-201: clippy pedantic, åtvaringar avviste i CI",
           "anchor": "rs-201",
           "url": "https://docs.example/handbook/rust/rules/#rs-201",
-          "score": 2.112,
+          "score": 2.206,
           "snippet": "MÅ Applikasjon Clippy si `pedantic`-gruppe **MÅ** vere på, og CI **MÅ** køyre clippy med `-D warnings`. Typen `Vec<T>` står i kode og skal stå urørt. ```toml [workspace.lints.clippy] pedantic = { level = \"warn\", priority = -1 } ```"
         },
         {
@@ -557,7 +558,7 @@
           "section": "Testing i Rust",
           "anchor": null,
           "url": "https://docs.example/handbook/rust/testing/",
-          "score": 1.843,
+          "score": 1.828,
           "snippet": "Testar er ein del av koden, ikkje eit tillegg."
         },
         {
@@ -566,7 +567,7 @@
           "section": "Kort sagt",
           "anchor": "samandrag",
           "url": "https://docs.example/handbook/workflow/containers/#samandrag",
-          "score": 1.71,
+          "score": 1.719,
           "snippet": "Bruk distroless eller slim-bilete, og køyr som ikkje-root."
         }
       ]
@@ -581,7 +582,7 @@
           "section": "RS-203: Ingen unwrap i produksjonskode",
           "anchor": "rs-203",
           "url": "https://docs.example/handbook/rust/rules/#rs-203",
-          "score": 3.617,
+          "score": 3.871,
           "snippet": "…duksjonskode **MÅ IKKJE** kalle `unwrap()`. Bruk `?` og ein feiltype. **Linux** Køyr `cargo clippy` i terminalen. **Windows** Køyr `cargo clippy` i PowerShell. ```rust import_this_is_not_an_import(); export fn also_not_removed() {} let v: V…"
         },
         {
@@ -590,7 +591,7 @@
           "section": "Installasjon",
           "anchor": "installasjon",
           "url": "https://docs.example/handbook/python/tools/uv/#installasjon",
-          "score": 1.942,
+          "score": 1.766,
           "snippet": "Køyr installasjonsskriptet frå astral.sh."
         },
         {
@@ -599,7 +600,7 @@
           "section": "Kort sagt",
           "anchor": "samandrag",
           "url": "https://docs.example/handbook/workflow/containers/#samandrag",
-          "score": 1.463,
+          "score": 1.471,
           "snippet": "Bruk distroless eller slim-bilete, og køyr som ikkje-root."
         },
         {
@@ -608,7 +609,7 @@
           "section": "RS-201: clippy pedantic, åtvaringar avviste i CI",
           "anchor": "rs-201",
           "url": "https://docs.example/handbook/rust/rules/#rs-201",
-          "score": 0.557,
+          "score": 0.604,
           "snippet": "MÅ Applikasjon Clippy si `pedantic`-gruppe **MÅ** vere på, og CI **MÅ** køyre clippy med `-D warnings`. Typen `Vec<T>` står i kode og skal stå urørt. ```toml [workspace.lints.clippy] pedantic = { level = \"warn\", priority = -1 } ```"
         }
       ]
@@ -623,7 +624,7 @@
           "section": "Python",
           "anchor": null,
           "url": "https://docs.example/handbook/python/",
-          "score": 2.01,
+          "score": 1.945,
           "snippet": "Python-delen av handboka. Vi brukar uv og pyproject.toml."
         }
       ]
