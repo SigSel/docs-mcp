@@ -1,0 +1,31 @@
+# An example deployment of the dev-handbook from Azure DevOps.
+#
+#   cp secrets.env.example secrets.env   # fill in, never commit
+#   kubectl apply -k deploy/k8s/overlays/example
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: docs-mcp
+resources:
+  - namespace.yaml
+  - ../../base
+  # - ingress.yaml
+images:
+  # Pick an implementation; they behave the same.
+  - name: docs-mcp
+    newName: registry.example.internal/docs-mcp-rust
+    newTag: "0.1.0"
+configMapGenerator:
+  - name: docs-mcp
+    behavior: merge
+    literals:
+      - DOCS_REPO_URL=https://dev.azure.com/ORG/PROJECT/_git/dev-handbook
+      - DOCS_REF=main
+      - DOCS_DIR=src/content/docs
+      - DOCS_NAME=dev-handbook
+      - DOCS_SITE_URL=https://handbook.example.internal/dev-handbook/
+      # Every name clients use to reach the service: the Service's DNS names and
+      # the ingress host. Requests with any other Host header are refused.
+      - MCP_ALLOWED_HOSTS=docs-mcp,docs-mcp.docs-mcp,docs-mcp.docs-mcp.svc,docs-mcp.docs-mcp.svc.cluster.local,docs-mcp.example.internal
+secretGenerator:
+  - name: docs-mcp
+    envs: [secrets.env]

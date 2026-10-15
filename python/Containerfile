@@ -1,0 +1,25 @@
+# docs-mcp, Python implementation. Build from this directory:
+#   podman build -t docs-mcp-python -f Containerfile .
+FROM ghcr.io/astral-sh/uv:0.12.5 AS uv
+
+FROM docker.io/library/python:3.12-slim-trixie AS builder
+COPY --from=uv /uv /usr/local/bin/uv
+WORKDIR /app
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --locked --no-dev --no-install-project
+COPY src ./src
+RUN uv sync --locked --no-dev --no-editable
+
+FROM docker.io/library/python:3.12-slim-trixie
+# git does the syncing; openssh-client for SSH remotes. ssh refuses to run for a
+# UID without a passwd entry, hence the useradd.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git openssh-client ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --uid 10001 --home-dir /tmp --no-create-home --shell /usr/sbin/nologin docs
+COPY --from=builder /app/.venv /app/.venv
+ENV PATH=/app/.venv/bin:$PATH HOME=/tmp DOCS_CACHE_DIR=/tmp/docs-mcp PYTHONUNBUFFERED=1
+USER 10001
+EXPOSE 8080
+ENTRYPOINT ["docs-mcp"]

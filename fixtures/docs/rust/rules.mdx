@@ -1,0 +1,62 @@
+---
+title: "Rust-reglane"
+innhaldstype: krav
+fagområde: backend
+eigarforum: rustforum
+tema: [kodekvalitet, testing]
+teknologi: [Rust, CI/CD]
+stikkord: [reglar]
+---
+
+import Badges from '~/components/Badges.astro';
+import Rule from '~/components/Rule.astro';
+export const level = 'must';
+
+Dette er heile standarden for Rust.
+
+{/* Denne kommentaren skal ikkje synast. */}
+
+## Oversikt
+
+| Regel | Nivå |
+|---|---|
+| RS-201 | MÅ |
+| RS-203 | MÅ |
+
+### RS-201: clippy pedantic, åtvaringar avviste i CI { #rs-201 }
+
+<Badges><Rule level="must">MÅ</Rule> <Profile>Applikasjon</Profile></Badges>
+
+Clippy si `pedantic`-gruppe **MÅ** vere på, og CI **MÅ** køyre clippy med
+`-D warnings`. Typen `Vec<T>` står i kode og skal stå urørt.
+
+```toml
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+```
+
+### RS-203: Ingen unwrap i produksjonskode {#rs-203}
+
+<Rule level="must">MÅ IKKJE</Rule>
+
+Produksjonskode **MÅ IKKJE** kalle `unwrap()`. Bruk `?` og ein feiltype.
+
+<Tabs>
+  <TabItem label="Linux">
+    Køyr `cargo clippy` i terminalen.
+  </TabItem>
+  <TabItem
+    label="Windows">
+    Køyr `cargo clippy` i PowerShell.
+  </TabItem>
+</Tabs>
+
+```rust
+import_this_is_not_an_import();
+export fn also_not_removed() {}
+let v: Vec<String> = Vec::new(); // <Badges> inni kode står att
+```
+
+:::kvifor[Kvifor ikkje unwrap?]
+Ein panikk i produksjon tek ned heile tenesta.
+:::

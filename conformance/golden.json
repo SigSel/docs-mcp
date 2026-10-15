@@ -1,0 +1,641 @@
+{
+  "tools": {
+    "docs_overview": {
+      "description": "Overview of the documentation: source and commit, page count, folders, and every metadata field with its values and page counts. Call it to learn which filters exist.",
+      "params": {},
+      "required": []
+    },
+    "get_section": {
+      "description": "Look up a section by its heading anchor or ID across all pages, for example a rule number such as 'RS-203'.",
+      "params": {
+        "anchor": "The anchor or ID, e.g. 'rs-203'. Case-insensitive."
+      },
+      "required": [
+        "anchor"
+      ]
+    },
+    "list_docs": {
+      "description": "List pages with their path, title, url and metadata, optionally narrowed by path prefix and metadata filters.",
+      "params": {
+        "path_prefix": "Only pages whose path starts with this, e.g. 'python/'.",
+        "filters": "Metadata filters: field name to a value or a list of values (any of them matches). docs_overview lists the fields and their values."
+      },
+      "required": []
+    },
+    "read_doc": {
+      "description": "Read a page as Markdown, with its metadata in a header. Pass section (an anchor or heading text) to read just that section and its subsections.",
+      "params": {
+        "path": "Page path as returned by search_docs or list_docs, e.g. 'rust/rules.mdx'. The extension may be left out.",
+        "section": "Optional anchor (e.g. 'rs-201') or heading text."
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "search_docs": {
+      "description": "Full-text search over every section of every page. Use a few distinctive keywords rather than a full sentence. Returns the best-matching sections with path, heading, anchor, url and a snippet; follow up with read_doc(path, section=anchor) for the full text.",
+      "params": {
+        "query": "Keywords to search for. Case-insensitive; words of 3+ letters also match longer words that start with them.",
+        "filters": "Metadata filters: field name to a value or a list of values (any of them matches). docs_overview lists the fields and their values.",
+        "path_prefix": "Only pages whose path starts with this, e.g. 'python/'.",
+        "limit": "Maximum number of results, 1-50. Default 10."
+      },
+      "required": [
+        "query"
+      ]
+    }
+  },
+  "overview": {
+    "name": "testhandbok",
+    "source": {
+      "type": "local",
+      "dir": ".",
+      "commit": null
+    },
+    "page_count": 7,
+    "folders": [
+      {
+        "path": ".",
+        "pages": 1
+      },
+      {
+        "path": "python",
+        "pages": 3
+      },
+      {
+        "path": "rust",
+        "pages": 2
+      },
+      {
+        "path": "workflow",
+        "pages": 1
+      }
+    ],
+    "fields": {
+      "aktiv": {
+        "true": 1
+      },
+      "eigarforum": {
+        "pythonforum": 1,
+        "rustforum": 2,
+        "utviklarforum": 1
+      },
+      "fagområde": {
+        "backend": 3,
+        "generelt": 2
+      },
+      "innhaldstype": {
+        "krav": 1,
+        "rettleiing": 2,
+        "tilråding": 1
+      },
+      "prioritet": {
+        "2": 1
+      },
+      "stikkord": {
+        "reglar": 1
+      },
+      "teknologi": {
+        "CI/CD": 1,
+        "Docker/Podman": 1,
+        "Python": 1,
+        "Rust": 2
+      },
+      "tema": {
+        "kodekvalitet": 1,
+        "konteinerteknologi": 1,
+        "pakking": 1,
+        "testing": 2,
+        "utviklingsmiljø": 1
+      }
+    }
+  },
+  "list_docs": {
+    "count": 7,
+    "pages": [
+      {
+        "path": "index.mdx",
+        "title": "Testhandboka",
+        "url": "https://docs.example/handbook/",
+        "metadata": {}
+      },
+      {
+        "path": "python/index.md",
+        "title": "Python",
+        "url": "https://docs.example/handbook/python/",
+        "metadata": {
+          "innhaldstype": "rettleiing",
+          "fagområde": [
+            "backend",
+            "generelt"
+          ],
+          "eigarforum": "pythonforum",
+          "tema": [
+            "utviklingsmiljø",
+            "pakking"
+          ],
+          "teknologi": "Python"
+        }
+      },
+      {
+        "path": "python/notes.md",
+        "title": "notes",
+        "url": "https://docs.example/handbook/python/notes/",
+        "metadata": {}
+      },
+      {
+        "path": "python/tools/uv.md",
+        "title": "uv – pakkehandsamar",
+        "url": "https://docs.example/handbook/python/tools/uv/",
+        "metadata": {}
+      },
+      {
+        "path": "rust/rules.mdx",
+        "title": "Rust-reglane",
+        "url": "https://docs.example/handbook/rust/rules/",
+        "metadata": {
+          "innhaldstype": "krav",
+          "fagområde": "backend",
+          "eigarforum": "rustforum",
+          "tema": [
+            "kodekvalitet",
+            "testing"
+          ],
+          "teknologi": [
+            "Rust",
+            "CI/CD"
+          ],
+          "stikkord": [
+            "reglar"
+          ]
+        }
+      },
+      {
+        "path": "rust/testing.md",
+        "title": "Testing i Rust",
+        "description": "Korleis vi skriv og organiserer testar.",
+        "url": "https://docs.example/handbook/rust/testing/",
+        "metadata": {
+          "innhaldstype": "rettleiing",
+          "fagområde": "backend",
+          "eigarforum": "rustforum",
+          "tema": "testing",
+          "teknologi": [
+            "Rust"
+          ]
+        }
+      },
+      {
+        "path": "workflow/containers.md",
+        "title": "Konteinarar",
+        "description": "Bilete, Containerfile og drift.",
+        "url": "https://docs.example/handbook/workflow/containers/",
+        "metadata": {
+          "innhaldstype": "tilråding",
+          "fagområde": "generelt",
+          "eigarforum": "utviklarforum",
+          "tema": "konteinerteknologi",
+          "teknologi": [
+            "Docker/Podman"
+          ],
+          "prioritet": "2",
+          "aktiv": "true"
+        }
+      }
+    ]
+  },
+  "read_doc": {
+    "index.mdx": "---\npath: index.mdx\ntitle: Testhandboka\nurl: https://docs.example/handbook/\n---\n\nVelkomen til testhandboka.\n\n**Python**\nAlt om Python-prosjekt.\n\n**Rust**\nAlt om Rust-prosjekt.",
+    "python/index.md": "---\npath: python/index.md\ntitle: Python\nurl: https://docs.example/handbook/python/\ninnhaldstype: rettleiing\nfagområde: backend, generelt\neigarforum: pythonforum\ntema: utviklingsmiljø, pakking\nteknologi: Python\n---\n\nPython-delen av handboka. Vi brukar uv og pyproject.toml.\n\n## Samandrag\n\nStart med uv. Alle prosjekt har ei pyproject.toml.",
+    "python/notes.md": "---\npath: python/notes.md\ntitle: notes\nurl: https://docs.example/handbook/python/notes/\n---\n\nNotat utan gyldig frontmatter. Ordet sjiraffkomponent finst berre her.",
+    "python/tools/uv.md": "---\npath: python/tools/uv.md\ntitle: uv – pakkehandsamar\nurl: https://docs.example/handbook/python/tools/uv/\n---\n\n# uv – pakkehandsamar\n\nuv erstattar pip, pip-tools og virtualenv. Installer med `curl` eller `winget`.\n\n## Installasjon\n\nKøyr installasjonsskriptet frå astral.sh.",
+    "rust/rules.mdx": "---\npath: rust/rules.mdx\ntitle: Rust-reglane\nurl: https://docs.example/handbook/rust/rules/\ninnhaldstype: krav\nfagområde: backend\neigarforum: rustforum\ntema: kodekvalitet, testing\nteknologi: Rust, CI/CD\nstikkord: reglar\n---\n\nDette er heile standarden for Rust.\n\n## Oversikt\n\n| Regel | Nivå |\n|---|---|\n| RS-201 | MÅ |\n| RS-203 | MÅ |\n\n### RS-201: clippy pedantic, åtvaringar avviste i CI\n\nMÅ Applikasjon\n\nClippy si `pedantic`-gruppe **MÅ** vere på, og CI **MÅ** køyre clippy med\n`-D warnings`. Typen `Vec<T>` står i kode og skal stå urørt.\n\n```toml\n[workspace.lints.clippy]\npedantic = { level = \"warn\", priority = -1 }\n```\n\n### RS-203: Ingen unwrap i produksjonskode\n\nMÅ IKKJE\n\nProduksjonskode **MÅ IKKJE** kalle `unwrap()`. Bruk `?` og ein feiltype.\n\n  **Linux**\n    Køyr `cargo clippy` i terminalen.\n\n  **Windows**\n    Køyr `cargo clippy` i PowerShell.\n\n```rust\nimport_this_is_not_an_import();\nexport fn also_not_removed() {}\nlet v: Vec<String> = Vec::new(); // <Badges> inni kode står att\n```\n\n:::kvifor[Kvifor ikkje unwrap?]\nEin panikk i produksjon tek ned heile tenesta.\n:::",
+    "rust/testing.md": "---\npath: rust/testing.md\ntitle: Testing i Rust\ndescription: Korleis vi skriv og organiserer testar.\nurl: https://docs.example/handbook/rust/testing/\ninnhaldstype: rettleiing\nfagområde: backend\neigarforum: rustforum\ntema: testing\nteknologi: Rust\n---\n\nTestar er ein del av koden, ikkje eit tillegg.\n\n## Einingstestar\n\nEiningstestar ligg i same fil som koden, i ein `tests`-modul.\n\n### Eksempel\n\n```rust\n#[test]\nfn adds() { assert_eq!(2 + 2, 4); }\n```\n\n## Integrasjonstestar\n\nIntegrasjonstestar ligg i `tests/`-mappa og brukar berre det offentlege API-et.\n\n### Eksempel\n\nSjå `tests/api.rs` i malprosjektet.\n\n## Sjå [regelen](rules.mdx#rs-203) om unwrap\n\nTestkode kan bruke `unwrap()` fritt.\n\n## Fixtures ##\n\nDelte testdata ligg i `tests/fixtures/`.",
+    "workflow/containers.md": "---\npath: workflow/containers.md\ntitle: Konteinarar\ndescription: Bilete, Containerfile og drift.\nurl: https://docs.example/handbook/workflow/containers/\ninnhaldstype: tilråding\nfagområde: generelt\neigarforum: utviklarforum\ntema: konteinerteknologi\nteknologi: Docker/Podman\nprioritet: 2\naktiv: true\n---\n\n## Kort sagt\n\nBruk distroless eller slim-bilete, og køyr som ikkje-root.\n\n## Eksempel\n\n```dockerfile\nFROM gcr.io/distroless/static\nUSER nonroot\n```"
+  },
+  "search": {
+    "clippy": {
+      "query": "clippy",
+      "count": 2,
+      "results": [
+        {
+          "path": "rust/rules.mdx",
+          "title": "Rust-reglane",
+          "section": "RS-201: clippy pedantic, åtvaringar avviste i CI",
+          "anchor": "rs-201",
+          "url": "https://docs.example/handbook/rust/rules/#rs-201",
+          "score": 3.25,
+          "snippet": "MÅ Applikasjon Clippy si `pedantic`-gruppe **MÅ** vere på, og CI **MÅ** køyre clippy med `-D warnings`. Typen `Vec<T>` står i kode og skal stå urørt. ```toml [workspace.lints.clippy] pedantic = { level = \"warn\", priority = -1 } ```"
+        },
+        {
+          "path": "rust/rules.mdx",
+          "title": "Rust-reglane",
+          "section": "RS-203: Ingen unwrap i produksjonskode",
+          "anchor": "rs-203",
+          "url": "https://docs.example/handbook/rust/rules/#rs-203",
+          "score": 1.843,
+          "snippet": "… **MÅ IKKJE** kalle `unwrap()`. Bruk `?` og ein feiltype. **Linux** Køyr `cargo clippy` i terminalen. **Windows** Køyr `cargo clippy` i PowerShell. ```rust import_this_is_not_an_import(); export fn also_not_removed() {} let v: Vec<String> =…"
+        }
+      ]
+    },
+    "RS-203": {
+      "query": "RS-203",
+      "count": 4,
+      "results": [
+        {
+          "path": "rust/rules.mdx",
+          "title": "Rust-reglane",
+          "section": "Oversikt",
+          "anchor": "oversikt",
+          "url": "https://docs.example/handbook/rust/rules/#oversikt",
+          "score": 4.33,
+          "snippet": "| Regel | Nivå | |---|---| | RS-201 | MÅ | | RS-203 | MÅ |"
+        },
+        {
+          "path": "rust/rules.mdx",
+          "title": "Rust-reglane",
+          "section": "RS-203: Ingen unwrap i produksjonskode",
+          "anchor": "rs-203",
+          "url": "https://docs.example/handbook/rust/rules/#rs-203",
+          "score": 3.951,
+          "snippet": "…Linux** Køyr `cargo clippy` i terminalen. **Windows** Køyr `cargo clippy` i PowerShell. ```rust import_this_is_not_an_import(); export fn also_not_removed() {} let v: Vec<String> = Vec::new(); // <Badges> inni kode står att ``` :::kvifor[Kv…"
+        },
+        {
+          "path": "rust/rules.mdx",
+          "title": "Rust-reglane",
+          "section": "RS-201: clippy pedantic, åtvaringar avviste i CI",
+          "anchor": "rs-201",
+          "url": "https://docs.example/handbook/rust/rules/#rs-201",
+          "score": 1.808,
+          "snippet": "MÅ Applikasjon Clippy si `pedantic`-gruppe **MÅ** vere på, og CI **MÅ** køyre clippy med `-D warnings`. Typen `Vec<T>` står i kode og skal stå urørt. ```toml [workspace.lints.clippy] pedantic = { level = \"warn\", priority = -1 } ```"
+        },
+        {
+          "path": "rust/testing.md",
+          "title": "Testing i Rust",
+          "section": "Eksempel",
+          "anchor": "eksempel-1",
+          "url": "https://docs.example/handbook/rust/testing/#eksempel-1",
+          "score": 1.603,
+          "snippet": "Sjå `tests/api.rs` i malprosjektet."
+        }
+      ]
+    },
+    "unwrap": {
+      "query": "unwrap",
+      "count": 2,
+      "results": [
+        {
+          "path": "rust/testing.md",
+          "title": "Testing i Rust",
+          "section": "Sjå regelen om unwrap",
+          "anchor": "sjå-regelen-om-unwrap",
+          "url": "https://docs.example/handbook/rust/testing/#sjå-regelen-om-unwrap",
+          "score": 3.427,
+          "snippet": "Testkode kan bruke `unwrap()` fritt."
+        },
+        {
+          "path": "rust/rules.mdx",
+          "title": "Rust-reglane",
+          "section": "RS-203: Ingen unwrap i produksjonskode",
+          "anchor": "rs-203",
+          "url": "https://docs.example/handbook/rust/rules/#rs-203",
+          "score": 2.872,
+          "snippet": "MÅ IKKJE Produksjonskode **MÅ IKKJE** kalle `unwrap()`. Bruk `?` og ein feiltype. **Linux** Køyr `cargo clippy` i terminalen. **Windows** Køyr `cargo clippy` i PowerShell. ```rust import_this_is_not_an_import(); export fn also_not_removed()…"
+        }
+      ]
+    },
+    "testar": {
+      "query": "testar",
+      "count": 3,
+      "results": [
+        {
+          "path": "rust/testing.md",
+          "title": "Testing i Rust",
+          "section": "Testing i Rust",
+          "anchor": null,
+          "url": "https://docs.example/handbook/rust/testing/",
+          "score": 1.401,
+          "snippet": "Testar er ein del av koden, ikkje eit tillegg."
+        },
+        {
+          "path": "rust/testing.md",
+          "title": "Testing i Rust",
+          "section": "Eksempel",
+          "anchor": "eksempel-1",
+          "url": "https://docs.example/handbook/rust/testing/#eksempel-1",
+          "score": 1.054,
+          "snippet": "Sjå `tests/api.rs` i malprosjektet."
+        },
+        {
+          "path": "rust/testing.md",
+          "title": "Testing i Rust",
+          "section": "Fixtures",
+          "anchor": "fixtures",
+          "url": "https://docs.example/handbook/rust/testing/#fixtures",
+          "score": 1.054,
+          "snippet": "Delte testdata ligg i `tests/fixtures/`."
+        }
+      ]
+    },
+    "rust": {
+      "query": "rust",
+      "count": 7,
+      "results": [
+        {
+          "path": "rust/rules.mdx",
+          "title": "Rust-reglane",
+          "section": "Rust-reglane",
+          "anchor": null,
+          "url": "https://docs.example/handbook/rust/rules/",
+          "score": 0.859,
+          "snippet": "Dette er heile standarden for Rust."
+        },
+        {
+          "path": "rust/testing.md",
+          "title": "Testing i Rust",
+          "section": "Eksempel",
+          "anchor": "eksempel",
+          "url": "https://docs.example/handbook/rust/testing/#eksempel",
+          "score": 0.834,
+          "snippet": "```rust #[test] fn adds() { assert_eq!(2 + 2, 4); } ```"
+        },
+        {
+          "path": "rust/testing.md",
+          "title": "Testing i Rust",
+          "section": "Eksempel",
+          "anchor": "eksempel-1",
+          "url": "https://docs.example/handbook/rust/testing/#eksempel-1",
+          "score": 0.796,
+          "snippet": "Sjå `tests/api.rs` i malprosjektet."
+        },
+        {
+          "path": "rust/testing.md",
+          "title": "Testing i Rust",
+          "section": "Fixtures",
+          "anchor": "fixtures",
+          "url": "https://docs.example/handbook/rust/testing/#fixtures",
+          "score": 0.796,
+          "snippet": "Delte testdata ligg i `tests/fixtures/`."
+        },
+        {
+          "path": "rust/rules.mdx",
+          "title": "Rust-reglane",
+          "section": "Oversikt",
+          "anchor": "oversikt",
+          "url": "https://docs.example/handbook/rust/rules/#oversikt",
+          "score": 0.79,
+          "snippet": "| Regel | Nivå | |---|---| | RS-201 | MÅ | | RS-203 | MÅ |"
+        },
+        {
+          "path": "index.mdx",
+          "title": "Testhandboka",
+          "section": "Testhandboka",
+          "anchor": null,
+          "url": "https://docs.example/handbook/",
+          "score": 0.742,
+          "snippet": "Velkomen til testhandboka. **Python** Alt om Python-prosjekt. **Rust** Alt om Rust-prosjekt."
+        },
+        {
+          "path": "rust/rules.mdx",
+          "title": "Rust-reglane",
+          "section": "RS-203: Ingen unwrap i produksjonskode",
+          "anchor": "rs-203",
+          "url": "https://docs.example/handbook/rust/rules/#rs-203",
+          "score": 0.623,
+          "snippet": "…r `cargo clippy` i terminalen. **Windows** Køyr `cargo clippy` i PowerShell. ```rust import_this_is_not_an_import(); export fn also_not_removed() {} let v: Vec<String> = Vec::new(); // <Badges> inni kode står att ``` :::kvifor[Kvifor ikkje …"
+        }
+      ]
+    },
+    "uv pyproject": {
+      "query": "uv pyproject",
+      "count": 4,
+      "results": [
+        {
+          "path": "python/index.md",
+          "title": "Python",
+          "section": "Python",
+          "anchor": null,
+          "url": "https://docs.example/handbook/python/",
+          "score": 4.097,
+          "snippet": "Python-delen av handboka. Vi brukar uv og pyproject.toml."
+        },
+        {
+          "path": "python/index.md",
+          "title": "Python",
+          "section": "Samandrag",
+          "anchor": "samandrag",
+          "url": "https://docs.example/handbook/python/#samandrag",
+          "score": 3.962,
+          "snippet": "Start med uv. Alle prosjekt har ei pyproject.toml."
+        },
+        {
+          "path": "python/tools/uv.md",
+          "title": "uv – pakkehandsamar",
+          "section": "uv – pakkehandsamar",
+          "anchor": "uv--pakkehandsamar",
+          "url": "https://docs.example/handbook/python/tools/uv/#uv--pakkehandsamar",
+          "score": 2.807,
+          "snippet": "uv erstattar pip, pip-tools og virtualenv. Installer med `curl` eller `winget`."
+        },
+        {
+          "path": "python/tools/uv.md",
+          "title": "uv – pakkehandsamar",
+          "section": "Installasjon",
+          "anchor": "installasjon",
+          "url": "https://docs.example/handbook/python/tools/uv/#installasjon",
+          "score": 2.44,
+          "snippet": "Køyr installasjonsskriptet frå astral.sh."
+        }
+      ]
+    },
+    "eksempel": {
+      "query": "eksempel",
+      "count": 3,
+      "results": [
+        {
+          "path": "rust/testing.md",
+          "title": "Testing i Rust",
+          "section": "Eksempel",
+          "anchor": "eksempel-1",
+          "url": "https://docs.example/handbook/rust/testing/#eksempel-1",
+          "score": 2.842,
+          "snippet": "Sjå `tests/api.rs` i malprosjektet."
+        },
+        {
+          "path": "rust/testing.md",
+          "title": "Testing i Rust",
+          "section": "Eksempel",
+          "anchor": "eksempel",
+          "url": "https://docs.example/handbook/rust/testing/#eksempel",
+          "score": 2.819,
+          "snippet": "```rust #[test] fn adds() { assert_eq!(2 + 2, 4); } ```"
+        },
+        {
+          "path": "workflow/containers.md",
+          "title": "Konteinarar",
+          "section": "Eksempel",
+          "anchor": "eksempel",
+          "url": "https://docs.example/handbook/workflow/containers/#eksempel",
+          "score": 2.819,
+          "snippet": "```dockerfile FROM gcr.io/distroless/static USER nonroot ```"
+        }
+      ]
+    },
+    "sjiraff": {
+      "query": "sjiraff",
+      "count": 1,
+      "results": [
+        {
+          "path": "python/notes.md",
+          "title": "notes",
+          "section": "notes",
+          "anchor": null,
+          "url": "https://docs.example/handbook/python/notes/",
+          "score": 2.461,
+          "snippet": "Notat utan gyldig frontmatter. Ordet sjiraffkomponent finst berre her."
+        }
+      ]
+    },
+    "distroless root": {
+      "query": "distroless root",
+      "count": 2,
+      "results": [
+        {
+          "path": "workflow/containers.md",
+          "title": "Konteinarar",
+          "section": "Kort sagt",
+          "anchor": "samandrag",
+          "url": "https://docs.example/handbook/workflow/containers/#samandrag",
+          "score": 4.581,
+          "snippet": "Bruk distroless eller slim-bilete, og køyr som ikkje-root."
+        },
+        {
+          "path": "workflow/containers.md",
+          "title": "Konteinarar",
+          "section": "Eksempel",
+          "anchor": "eksempel",
+          "url": "https://docs.example/handbook/workflow/containers/#eksempel",
+          "score": 2.199,
+          "snippet": "```dockerfile FROM gcr.io/distroless/static USER nonroot ```"
+        }
+      ]
+    },
+    "MÅ IKKJE": {
+      "query": "MÅ IKKJE",
+      "count": 5,
+      "results": [
+        {
+          "path": "rust/rules.mdx",
+          "title": "Rust-reglane",
+          "section": "RS-203: Ingen unwrap i produksjonskode",
+          "anchor": "rs-203",
+          "url": "https://docs.example/handbook/rust/rules/#rs-203",
+          "score": 3.473,
+          "snippet": "MÅ IKKJE Produksjonskode **MÅ IKKJE** kalle `unwrap()`. Bruk `?` og ein feiltype. **Linux** Køyr `cargo clippy` i terminalen. **Windows** Køyr `cargo clippy` i PowerShell. ```rust import_this_is_not_an_import(); export fn also_not_removed()…"
+        },
+        {
+          "path": "rust/rules.mdx",
+          "title": "Rust-reglane",
+          "section": "Oversikt",
+          "anchor": "oversikt",
+          "url": "https://docs.example/handbook/rust/rules/#oversikt",
+          "score": 2.49,
+          "snippet": "| Regel | Nivå | |---|---| | RS-201 | MÅ | | RS-203 | MÅ |"
+        },
+        {
+          "path": "rust/rules.mdx",
+          "title": "Rust-reglane",
+          "section": "RS-201: clippy pedantic, åtvaringar avviste i CI",
+          "anchor": "rs-201",
+          "url": "https://docs.example/handbook/rust/rules/#rs-201",
+          "score": 2.112,
+          "snippet": "MÅ Applikasjon Clippy si `pedantic`-gruppe **MÅ** vere på, og CI **MÅ** køyre clippy med `-D warnings`. Typen `Vec<T>` står i kode og skal stå urørt. ```toml [workspace.lints.clippy] pedantic = { level = \"warn\", priority = -1 } ```"
+        },
+        {
+          "path": "rust/testing.md",
+          "title": "Testing i Rust",
+          "section": "Testing i Rust",
+          "anchor": null,
+          "url": "https://docs.example/handbook/rust/testing/",
+          "score": 1.843,
+          "snippet": "Testar er ein del av koden, ikkje eit tillegg."
+        },
+        {
+          "path": "workflow/containers.md",
+          "title": "Konteinarar",
+          "section": "Kort sagt",
+          "anchor": "samandrag",
+          "url": "https://docs.example/handbook/workflow/containers/#samandrag",
+          "score": 1.71,
+          "snippet": "Bruk distroless eller slim-bilete, og køyr som ikkje-root."
+        }
+      ]
+    },
+    "køyr cargo": {
+      "query": "køyr cargo",
+      "count": 4,
+      "results": [
+        {
+          "path": "rust/rules.mdx",
+          "title": "Rust-reglane",
+          "section": "RS-203: Ingen unwrap i produksjonskode",
+          "anchor": "rs-203",
+          "url": "https://docs.example/handbook/rust/rules/#rs-203",
+          "score": 3.617,
+          "snippet": "…duksjonskode **MÅ IKKJE** kalle `unwrap()`. Bruk `?` og ein feiltype. **Linux** Køyr `cargo clippy` i terminalen. **Windows** Køyr `cargo clippy` i PowerShell. ```rust import_this_is_not_an_import(); export fn also_not_removed() {} let v: V…"
+        },
+        {
+          "path": "python/tools/uv.md",
+          "title": "uv – pakkehandsamar",
+          "section": "Installasjon",
+          "anchor": "installasjon",
+          "url": "https://docs.example/handbook/python/tools/uv/#installasjon",
+          "score": 1.942,
+          "snippet": "Køyr installasjonsskriptet frå astral.sh."
+        },
+        {
+          "path": "workflow/containers.md",
+          "title": "Konteinarar",
+          "section": "Kort sagt",
+          "anchor": "samandrag",
+          "url": "https://docs.example/handbook/workflow/containers/#samandrag",
+          "score": 1.463,
+          "snippet": "Bruk distroless eller slim-bilete, og køyr som ikkje-root."
+        },
+        {
+          "path": "rust/rules.mdx",
+          "title": "Rust-reglane",
+          "section": "RS-201: clippy pedantic, åtvaringar avviste i CI",
+          "anchor": "rs-201",
+          "url": "https://docs.example/handbook/rust/rules/#rs-201",
+          "score": 0.557,
+          "snippet": "MÅ Applikasjon Clippy si `pedantic`-gruppe **MÅ** vere på, og CI **MÅ** køyre clippy med `-D warnings`. Typen `Vec<T>` står i kode og skal stå urørt. ```toml [workspace.lints.clippy] pedantic = { level = \"warn\", priority = -1 } ```"
+        }
+      ]
+    },
+    "handbok": {
+      "query": "handbok",
+      "count": 1,
+      "results": [
+        {
+          "path": "python/index.md",
+          "title": "Python",
+          "section": "Python",
+          "anchor": null,
+          "url": "https://docs.example/handbook/python/",
+          "score": 2.01,
+          "snippet": "Python-delen av handboka. Vi brukar uv og pyproject.toml."
+        }
+      ]
+    }
+  },
+  "get_section": {
+    "rs-201": "---\npath: rust/rules.mdx\ntitle: Rust-reglane\nurl: https://docs.example/handbook/rust/rules/#rs-201\nsection: rs-201\ninnhaldstype: krav\nfagområde: backend\neigarforum: rustforum\ntema: kodekvalitet, testing\nteknologi: Rust, CI/CD\nstikkord: reglar\n---\n\n### RS-201: clippy pedantic, åtvaringar avviste i CI\n\nMÅ Applikasjon\n\nClippy si `pedantic`-gruppe **MÅ** vere på, og CI **MÅ** køyre clippy med\n`-D warnings`. Typen `Vec<T>` står i kode og skal stå urørt.\n\n```toml\n[workspace.lints.clippy]\npedantic = { level = \"warn\", priority = -1 }\n```",
+    "RS-203": "---\npath: rust/rules.mdx\ntitle: Rust-reglane\nurl: https://docs.example/handbook/rust/rules/#rs-203\nsection: rs-203\ninnhaldstype: krav\nfagområde: backend\neigarforum: rustforum\ntema: kodekvalitet, testing\nteknologi: Rust, CI/CD\nstikkord: reglar\n---\n\n### RS-203: Ingen unwrap i produksjonskode\n\nMÅ IKKJE\n\nProduksjonskode **MÅ IKKJE** kalle `unwrap()`. Bruk `?` og ein feiltype.\n\n  **Linux**\n    Køyr `cargo clippy` i terminalen.\n\n  **Windows**\n    Køyr `cargo clippy` i PowerShell.\n\n```rust\nimport_this_is_not_an_import();\nexport fn also_not_removed() {}\nlet v: Vec<String> = Vec::new(); // <Badges> inni kode står att\n```\n\n:::kvifor[Kvifor ikkje unwrap?]\nEin panikk i produksjon tek ned heile tenesta.\n:::",
+    "samandrag": "---\npath: workflow/containers.md\ntitle: Konteinarar\ndescription: Bilete, Containerfile og drift.\nurl: https://docs.example/handbook/workflow/containers/#samandrag\nsection: samandrag\ninnhaldstype: tilråding\nfagområde: generelt\neigarforum: utviklarforum\ntema: konteinerteknologi\nteknologi: Docker/Podman\nprioritet: 2\naktiv: true\n---\n\n## Kort sagt\n\nBruk distroless eller slim-bilete, og køyr som ikkje-root.",
+    "eksempel": "Anchor 'eksempel' matches 2 sections. Read one with read_doc(path, section):\n- rust/testing.md#eksempel (Eksempel)\n- workflow/containers.md#eksempel (Eksempel)",
+    "eksempel-1": "---\npath: rust/testing.md\ntitle: Testing i Rust\ndescription: Korleis vi skriv og organiserer testar.\nurl: https://docs.example/handbook/rust/testing/#eksempel-1\nsection: eksempel-1\ninnhaldstype: rettleiing\nfagområde: backend\neigarforum: rustforum\ntema: testing\nteknologi: Rust\n---\n\n### Eksempel\n\nSjå `tests/api.rs` i malprosjektet.",
+    "fixtures": "---\npath: rust/testing.md\ntitle: Testing i Rust\ndescription: Korleis vi skriv og organiserer testar.\nurl: https://docs.example/handbook/rust/testing/#fixtures\nsection: fixtures\ninnhaldstype: rettleiing\nfagområde: backend\neigarforum: rustforum\ntema: testing\nteknologi: Rust\n---\n\n## Fixtures ##\n\nDelte testdata ligg i `tests/fixtures/`.",
+    "oversikt": "---\npath: rust/rules.mdx\ntitle: Rust-reglane\nurl: https://docs.example/handbook/rust/rules/#oversikt\nsection: oversikt\ninnhaldstype: krav\nfagområde: backend\neigarforum: rustforum\ntema: kodekvalitet, testing\nteknologi: Rust, CI/CD\nstikkord: reglar\n---\n\n## Oversikt\n\n| Regel | Nivå |\n|---|---|\n| RS-201 | MÅ |\n| RS-203 | MÅ |\n\n### RS-201: clippy pedantic, åtvaringar avviste i CI\n\nMÅ Applikasjon\n\nClippy si `pedantic`-gruppe **MÅ** vere på, og CI **MÅ** køyre clippy med\n`-D warnings`. Typen `Vec<T>` står i kode og skal stå urørt.\n\n```toml\n[workspace.lints.clippy]\npedantic = { level = \"warn\", priority = -1 }\n```\n\n### RS-203: Ingen unwrap i produksjonskode\n\nMÅ IKKJE\n\nProduksjonskode **MÅ IKKJE** kalle `unwrap()`. Bruk `?` og ein feiltype.\n\n  **Linux**\n    Køyr `cargo clippy` i terminalen.\n\n  **Windows**\n    Køyr `cargo clippy` i PowerShell.\n\n```rust\nimport_this_is_not_an_import();\nexport fn also_not_removed() {}\nlet v: Vec<String> = Vec::new(); // <Badges> inni kode står att\n```\n\n:::kvifor[Kvifor ikkje unwrap?]\nEin panikk i produksjon tek ned heile tenesta.\n:::"
+  }
+}

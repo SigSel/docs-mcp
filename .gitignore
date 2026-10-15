@@ -1,0 +1,13 @@
+# build output and local environments
+rust/target/
+python/.venv/
+python/.ruff_cache/
+typescript/node_modules/
+typescript/dist/
+conformance/.venv/
+__pycache__/
+.pytest_cache/
+
+# local secrets for compose and kustomize
+deploy/.env
+deploy/k8s/**/secrets.env

@@ -1,0 +1,20 @@
+# docs-mcp, Rust implementation. Build from this directory:
+#   podman build -t docs-mcp-rust -f Containerfile .
+FROM docker.io/library/rust:1.94-slim-trixie AS builder
+WORKDIR /src
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+RUN cargo build --release --locked
+
+FROM docker.io/library/debian:trixie-slim
+# git does the syncing; openssh-client for SSH remotes. ssh refuses to run for a
+# UID without a passwd entry, hence the useradd.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git openssh-client ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --uid 10001 --home-dir /tmp --no-create-home --shell /usr/sbin/nologin docs
+COPY --from=builder /src/target/release/docs-mcp /usr/local/bin/docs-mcp
+ENV HOME=/tmp DOCS_CACHE_DIR=/tmp/docs-mcp
+USER 10001
+EXPOSE 8080
+ENTRYPOINT ["docs-mcp"]

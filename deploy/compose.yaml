@@ -1,0 +1,57 @@
+# Local development: serve a handbook checkout on this machine, re-read every 5 s.
+#
+#   podman compose --profile rust up            # or python / typescript / all
+#   claude mcp add --transport http handbook http://localhost:8081/mcp
+#
+# DOCS_PATH points at the repo checkout and DOCS_DIR at the docs inside it; the
+# defaults fit ~/code/dev-handbooks/dev-handbook next to this repo.
+#
+# The `git` profile shows the production shape instead: clone from a remote and
+# pull every five minutes. Put DOCS_REPO_URL and DOCS_GIT_TOKEN in deploy/.env.
+
+x-local: &local
+  environment:
+    DOCS_LOCAL_PATH: /docs
+    DOCS_DIR: ${DOCS_DIR:-src/content/docs}
+    DOCS_NAME: ${DOCS_NAME:-dev-handbook}
+    DOCS_REFRESH_SECONDS: "5"
+    MCP_ALLOWED_HOSTS: localhost,127.0.0.1
+  volumes:
+    # :z relabels for SELinux (Fedora/RHEL); harmless elsewhere.
+    - ${DOCS_PATH:-../../dev-handbooks/dev-handbook}:/docs:ro,z
+  read_only: true
+  tmpfs: [/tmp]
+
+services:
+  rust:
+    <<: *local
+    profiles: [rust, all]
+    build: { context: ../rust, dockerfile: Containerfile }
+    image: localhost/docs-mcp-rust:dev
+    ports: ["127.0.0.1:8081:8080"]
+
+  python:
+    <<: *local
+    profiles: [python, all]
+    build: { context: ../python, dockerfile: Containerfile }
+    image: localhost/docs-mcp-python:dev
+    ports: ["127.0.0.1:8082:8080"]
+
+  typescript:
+    <<: *local
+    profiles: [typescript, all]
+    build: { context: ../typescript, dockerfile: Containerfile }
+    image: localhost/docs-mcp-typescript:dev
+    ports: ["127.0.0.1:8083:8080"]
+
+  git:
+    profiles: [git]
+    image: localhost/docs-mcp-${IMPL:-rust}:dev
+    env_file: [.env]
+    environment:
+      DOCS_DIR: ${DOCS_DIR:-src/content/docs}
+      DOCS_NAME: ${DOCS_NAME:-dev-handbook}
+      MCP_ALLOWED_HOSTS: localhost,127.0.0.1
+    read_only: true
+    tmpfs: [/tmp]
+    ports: ["127.0.0.1:8080:8080"]
