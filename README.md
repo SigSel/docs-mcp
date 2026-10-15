@@ -9,6 +9,9 @@ It runs once, centrally, on the internal network. Users point their assistant
 at it; nobody runs it on their own machine. Running it locally is for
 developing docs-mcp and for previewing handbook changes.
 
+New to MCP? [HOW-IT-WORKS.md](HOW-IT-WORKS.md) explains the idea and walks
+through a question from user to answer, with the real requests and responses.
+
 ```
 git repo (Azure DevOps, Forgejo, GitHub, …)
    │  clone, then pull every 5 min (or POST /refresh from a webhook)
@@ -263,6 +266,7 @@ you keep.
 ## Repository layout
 
 ```
+HOW-IT-WORKS.md    the idea, and a question traced from user to answer
 SPEC.md            the contract: config, HTTP, parsing, search, tool outputs
 rust/ python/ typescript/
                    one implementation each, with a Containerfile
