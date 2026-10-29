@@ -50,6 +50,12 @@ _Yaml12Loader.add_implicit_resolver(
     "tag:yaml.org,2002:bool", re.compile(r"^(?:true|True|TRUE|false|False|FALSE)$"), list("tTfF")
 )
 
+
+def load_yaml(text: str) -> Any:
+    """YAML 1.2, building only plain values. Raises yaml.YAMLError on bad input."""
+    return yaml.load(text, Loader=_Yaml12Loader)
+
+
 MAX_YAML_DEPTH = 32
 
 
@@ -88,6 +94,8 @@ class Page:
     metadata: Metadata
     lines: list[str]
     sections: list[Section] = field(default_factory=list)
+    file: bool = False  # not Markdown: served as written (SPEC.md §4.7)
+    source: str = ""
 
     @property
     def body(self) -> str:
@@ -307,4 +315,18 @@ def parse_page(path: str, text: str, ignore_fields: frozenset[str], root_name: s
         metadata=extract_metadata(front, ignore_fields),
         lines=[line.text for line in lines],
         sections=sections,
+    )
+
+
+def parse_file(path: str, text: str) -> Page:
+    """A file that is not Markdown: one intro section holding the text as written (SPEC.md §4.7)."""
+    lines = text.removeprefix("\ufeff").replace("\r\n", "\n").split("\n")
+    return Page(
+        path=path,
+        title=path.rsplit("/", 1)[-1],
+        description=None,
+        metadata={},
+        lines=lines,
+        sections=[Section(0, None, None, False, 0, len(lines), len(lines))],
+        file=True,
     )

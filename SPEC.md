@@ -17,6 +17,7 @@ reads the value from that file instead, trimmed, for secrets mounted as files
 
 | Variable | Default | Meaning |
 |---|---|---|
+| `DOCS_SOURCES` | | Several sources, as YAML (§7). Replaces `DOCS_REPO_URL`, `DOCS_LOCAL_PATH`, `DOCS_REF`, `DOCS_DIR`, `DOCS_INCLUDE`, `DOCS_EXCLUDE`, `DOCS_IGNORE_FIELDS`, `DOCS_LANGUAGE` and `DOCS_SITE_URL` |
 | `DOCS_REPO_URL` | | Git URL to clone: `https://`, `ssh://`, `git@host:path`, `file://` or a local repo path |
 | `DOCS_LOCAL_PATH` | | A local directory to serve as-is, without git. Exactly one of this and `DOCS_REPO_URL` must be set |
 | `DOCS_REF` | remote default branch | Branch or tag to follow |
@@ -276,8 +277,16 @@ Every refresh re-reads the directory and rebuilds the index. `commit` is `null`.
   - `*` matches within one segment.
   - `?` matches one non-`/` character.
   - Everything else is literal.
+- **Files that usually hold secrets are never pages**, whatever the globs say:
+  names that are `.env` or start with `.env.`, and names ending in `.pem`,
+  `.key`, `.p12` or `.pfx`, in any case. This is a safety net, not a guarantee: anything
+  else committed to a source reaches every client.
+- **A file over 1,000,000 bytes, or with a NUL byte in it, is skipped:** too
+  big to be one useful result, or not text.
 - Pages are kept sorted by path in code-point order.
 - Files are read as UTF-8, with invalid bytes replaced.
+- A file whose extension is `.md` or `.mdx`, in any case, is a **Markdown page**
+  (§4.2–4.6). Any other file is a **file page** (§4.7).
 
 ### 4.2 Frontmatter and metadata
 
@@ -386,6 +395,45 @@ When `DOCS_SITE_URL` is set, a page's URL is built in four steps:
 
 For example, `rust/rules.mdx` → `https://host/handbook/rust/rules/`, and
 `index.mdx` → `https://host/handbook/`. A section URL appends `#<anchor>`.
+File pages have no URL: the site renders only the Markdown.
+
+### 4.7 File pages
+
+Any file that is not Markdown, such as a pipeline template, a `pyproject.toml`
+or a `Dockerfile`, is served as it is written, so the model sees exactly what
+is in the repo.
+
+- **Text:** a leading BOM is removed and `\r\n` becomes `\n`, as for Markdown.
+  Nothing else changes: no frontmatter, no cleaning.
+- **Title:** the file name, such as `build.yml`.
+- **No description, no metadata, no headings.** The page has one section, the
+  intro, which holds the whole text. Metadata filters never match it.
+- **Search** sees the text as it is (links are not reduced).
+- **`read_doc`** returns the header, a blank line, and the text in a fenced
+  code block:
+  - The fence is backticks, one more than the longest run of backticks in the
+    text, and at least three.
+  - Its info string is the file's extension in lowercase, without the dot, or
+    the whole file name in lowercase when there is no extension:
+    `build.yml` → `yml`, `Dockerfile` → `dockerfile`.
+  - The text ends with a newline before the closing fence, added if it has
+    none.
+
+  ````
+  ---
+  path: templates/build.yml
+  title: build.yml
+  ---
+
+  ```yml
+  parameters:
+    - name: pythonVersion
+  …
+  ```
+  ````
+
+  Asking for a `section` of a file page is the usual tool error, with no
+  anchors to list.
 
 ## 5. Search
 
@@ -610,3 +658,149 @@ Finds sections whose anchor matches, across all pages.
   ```
 
 - **No match:** a tool error that suggests `search_docs`.
+
+## 7. Several sources
+
+One docs-mcp can serve several **sources**: the handbook, a repo of pipeline
+templates, a project template, each with its own repo, folder and globs.
+
+### 7.1 Configuration
+
+`DOCS_SOURCES` (or `DOCS_SOURCES_FILE`) is a YAML list. Each item is a source:
+
+```yaml
+- name: handbook
+  description: The dev handbook. Rules and guidance for Rust, Python and our workflow.
+  repo: https://dev.azure.com/ORG/PROJECT/_git/dev-handbook
+  dir: src/content/docs
+  language: Norwegian Nynorsk
+- name: ci-templates
+  description: Azure DevOps pipeline templates. Use them when writing or reviewing azure-pipelines.yml.
+  repo: https://dev.azure.com/ORG/PROJECT/_git/ci-templates
+  include: ["**/*.yml", "**/*.yaml", "**/*.md"]
+```
+
+| Key | Required | Meaning |
+|---|---|---|
+| `name` | yes | Lowercase letters and digits, words joined by single `-`. Unique. Tools and results use it |
+| `description` | yes | What the source is, and when to use it. The model reads it |
+| `repo` | one of `repo` and `path` | As `DOCS_REPO_URL` |
+| `path` | | As `DOCS_LOCAL_PATH` |
+| `ref`, `dir`, `language`, `site_url` | no | As `DOCS_REF`, `DOCS_DIR`, `DOCS_LANGUAGE`, `DOCS_SITE_URL` |
+| `include`, `exclude`, `ignore_fields` | no | As `DOCS_INCLUDE`, `DOCS_EXCLUDE`, `DOCS_IGNORE_FIELDS`: a comma-separated string, or a list of strings |
+
+Values are strings, apart from the three lists. Defaults are those of the
+variables. Everything else is shared by all sources: the git credentials and
+timeout, `DOCS_REFRESH_SECONDS`, `DOCS_CACHE_DIR`, `DOCS_NAME` (the server's
+name) and every `MCP_*` setting. One git account therefore reads every repo:
+give it exactly those.
+
+The source list is the operator's: it is never read from a source.
+
+Exit with status 2 and a message naming `DOCS_SOURCES`, for:
+
+- `DOCS_SOURCES` together with any of the variables it replaces:
+  `DOCS_REPO_URL`, `DOCS_LOCAL_PATH`, `DOCS_REF`, `DOCS_DIR`, `DOCS_INCLUDE`,
+  `DOCS_EXCLUDE`, `DOCS_IGNORE_FIELDS`, `DOCS_LANGUAGE`, `DOCS_SITE_URL`;
+- YAML that does not parse, or is not a non-empty list of mappings;
+- an unknown key, a value of the wrong type, a missing or invalid `name`, a
+  repeated `name`, a missing `description`, or not exactly one of `repo` and
+  `path`.
+
+The message also names the source (by `name`, or by its position from 1) and
+the key.
+
+Without `DOCS_SOURCES`, the variables describe a single source, and nothing in
+§7.3–7.4 applies: every output is exactly as in the sections before. With
+`DOCS_SOURCES`, §7.3–7.4 apply even to a list of one.
+
+### 7.2 Sync
+
+- Each source is cloned to `<DOCS_CACHE_DIR>/<name>/repo`, and syncs on its own,
+  as §3 describes: its own schedule, retries, `last_error`, and lock. One
+  failing or slow source does not hold up another.
+- When a source has new pages, the search index over all sources is rebuilt
+  off to the side and swapped in.
+- `/readyz` is `200` once every source has loaded once, so a deployment with a
+  broken new source never takes over from a working one. Its status object:
+
+  ```json
+  {"ready": true, "pages": 82,
+   "sources": [{"name": "handbook", "ready": true, "pages": 55, "commit": "…", "synced_at": "…", "last_error": null}, …]}
+  ```
+
+  `pages` at the top is the sum. The list follows the configured order.
+- `POST /refresh` syncs every source at once and waits for all of them: `200`
+  when all succeeded, `500` when any failed. `POST /refresh?source=<name>`
+  syncs one. An unknown name gets `404`, with a body that names the sources.
+- A tool called before any source has loaded returns `Index not ready yet.`,
+  then ` Last error in <name>: <error>` for each source with an error. Until
+  then, tools use the sources that have loaded.
+
+### 7.3 Search and lookups
+
+- Search scores the sections of all sources together: `N`, document
+  frequencies and `avgdl` are over all of them, and query terms expand against
+  all their words.
+- Ties are broken by source, in configured order, before path.
+- At most 3 results come from one page, a page being a source and a path.
+- `source`, when given, keeps only that source, applied like `path_prefix`.
+- `read_doc(path, section?, source?)` finds the path as §6 describes:
+  - in `source`, when given;
+  - otherwise in every source. Found in one, it is used. Found in several, it
+    is a tool error: `'<path>' is in several sources: <a>, <b>. Pass source to
+    read_doc.`
+  - Not found, the error lists up to 5 similar paths from all sources as
+    `<path> (<source>)`.
+- `get_section(anchor)` looks across all sources. Several matches are listed as
+  `- <source>: <path>#<anchor> (<heading>)`, after the line
+  `Anchor '<anchor>' matches <n> sections. Read one with read_doc(path, section, source):`.
+- A `source` that is not configured is a tool error:
+  `No source '<x>'. Sources: <a>, <b>, <c>.` One that has not loaded yet:
+  `Source '<x>' is not ready yet.`, plus ` Last error: <error>` if any.
+
+### 7.4 Tools
+
+**Server instructions:**
+
+> Documentation and reference repositories for {name}, in {n} sources:
+> - {source name} ({language}): {description}
+> - …
+>
+> Use search_docs to find what is relevant to a question, then read_doc to read
+> a page or file. search_docs searches every source unless you name one. Search
+> with keywords in the language of the source you expect the answer in, even
+> when the user writes in another language, and answer in the user's language.
+> Files that are not Markdown come back as they are, in a code block.
+> get_section looks up a heading anchor or ID, such as a rule number, across all
+> sources. docs_overview lists each source's metadata fields and values you can
+> filter on; list_docs browses a source. Cite pages by source and path, or by
+> url when present.
+
+The list has one line per source, in configured order, and ends with a blank
+line; the paragraph after it is one line. A source without a `language` is
+listed as `- {source name}: {description}`.
+
+**Descriptions.** `{lang}` becomes `the language of the source you search`.
+Three tools take one more parameter, `source`, which a single source does not
+show:
+
+| Tool | `source` description |
+|---|---|
+| `search_docs` | `Only this source. Leave it out to search all of them.` |
+| `list_docs` | `Only this source. Leave it out to list all of them.` |
+| `read_doc` | `The page's source, as search_docs and list_docs return it. Needed only when the path is in several sources.` |
+
+**Outputs.** Every page, result and listing names its source first:
+
+- `list_docs` and `search_docs`: each entry starts with `"source": "<name>"`.
+- `read_doc` and `get_section`: the header starts with `source: <name>`.
+- `docs_overview`:
+
+  ```json
+  {"name":"docs","sources":[{"name":"handbook","description":"…","language":"Norwegian Nynorsk","source":{"type":"git",…},"page_count":55,"folders":[…],"fields":{…}},…]}
+  ```
+
+  Each source is the single-source overview of §6 with its `description` after
+  `name`. A source that has not loaded yet has `page_count` 0, no folders and
+  no fields.

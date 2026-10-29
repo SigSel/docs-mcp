@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.tools import Tool
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import Field
@@ -25,7 +26,7 @@ from . import __version__
 from .config import Config
 from .index import DocIndex, ToolFailure
 from .oauth import METADATA, Refused, TokenChecker, Unreachable, metadata, metadata_path, metadata_url
-from .source import Syncer
+from .source import Library
 
 log = logging.getLogger("docs_mcp")
 
@@ -63,14 +64,42 @@ DESCRIBE = {
 }
 
 
+# With DOCS_SOURCES (SPEC.md §7.4): the instructions after the list of sources, and the `source` parameter.
+INSTRUCTIONS_SOURCES = (
+    "Use search_docs to find what is relevant to a question, then read_doc to read a page or file. search_docs "
+    "searches every source unless you name one. Search with keywords in the language of the source you expect the "
+    "answer in, even when the user writes in another language, and answer in the user's language. Files that are not "
+    "Markdown come back as they are, in a code block. get_section looks up a heading anchor or ID, such as a rule "
+    "number, across all sources. docs_overview lists each source's metadata fields and values you can filter on; "
+    "list_docs browses a source. Cite pages by source and path, or by url when present."
+)
+SOURCE_PARAM = {
+    "search_docs": "Only this source. Leave it out to search all of them.",
+    "list_docs": "Only this source. Leave it out to list all of them.",
+    "read_doc": "The page's source, as search_docs and list_docs return it. Needed only when the path is in several "
+    "sources.",
+}
+
+
 def describe(config: Config) -> dict[str, str]:
-    lang = config.language or "the language of the documentation"
+    if config.multi:
+        lang = "the language of the source you search"
+    else:
+        lang = config.sources[0].language or "the language of the documentation"
     return {key: text.replace("{lang}", lang) for key, text in DESCRIBE.items()}
 
 
 def instructions(config: Config) -> str:
-    written = f", written in {config.language}" if config.language else ""
-    lang = config.language or "the language of the documentation"
+    if config.multi:
+        lines = [
+            f"- {s.name} ({s.language}): {s.description}" if s.language else f"- {s.name}: {s.description}"
+            for s in config.sources
+        ]
+        head = f"Documentation and reference repositories for {config.name}, in {len(config.sources)} sources:"
+        return "\n".join([head, *lines]) + "\n\n" + INSTRUCTIONS_SOURCES
+    language = config.sources[0].language
+    written = f", written in {language}" if language else ""
+    lang = language or "the language of the documentation"
     return INSTRUCTIONS.format(name=config.name, written=written, lang=lang)
 
 
@@ -81,58 +110,86 @@ def _dumps(data: Any) -> str:
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
 
 
-def build_mcp(config: Config, syncer: Syncer) -> MCPServer:
-    mcp = MCPServer(name="docs-mcp", version=__version__, instructions=instructions(config))
+def build_mcp(config: Config, library: Library) -> MCPServer:
     text = describe(config)
     Filters = Annotated[dict[str, str | list[str]] | None, Field(description=text["filters"])]
     PathPrefix = Annotated[str | None, Field(description=text["path_prefix"])]
+    ListSource = Annotated[str | None, Field(description=SOURCE_PARAM["list_docs"])]
+    SearchSource = Annotated[str | None, Field(description=SOURCE_PARAM["search_docs"])]
+    ReadSource = Annotated[str | None, Field(description=SOURCE_PARAM["read_doc"])]
 
-    def run(fn: Callable[[DocIndex], str]) -> CallToolResult:
-        index = syncer.index
+    def failed(message: str) -> CallToolResult:
+        return CallToolResult(content=[TextContent(type="text", text=message)], is_error=True)
+
+    def run(fn: Callable[[DocIndex], str], source: str | None = None) -> CallToolResult:
+        if source is not None and (failure := library.check_source(source)):
+            return failed(failure)
+        index = library.index
         if index is None:
-            error = f" Last error: {syncer.last_error}" if syncer.last_error else ""
-            return CallToolResult(
-                content=[TextContent(type="text", text=f"Index not ready yet.{error}")], is_error=True
-            )
+            return failed(library.not_ready())
         try:
             return CallToolResult(content=[TextContent(type="text", text=fn(index))])
         except ToolFailure as e:
-            return CallToolResult(content=[TextContent(type="text", text=str(e))], is_error=True)
+            return failed(str(e))
 
-    def tool(name: str) -> Callable[[Callable[..., CallToolResult]], Callable[..., CallToolResult]]:
-        return mcp.tool(name=name, description=text[name], annotations=READ_ONLY, structured_output=False)
-
-    @tool("docs_overview")
-    def docs_overview() -> CallToolResult:
-        return run(
-            lambda ix: _dumps(
-                {"name": config.name, "language": config.language, "source": syncer.source_info(), **ix.overview()}
+    def overview(ix: DocIndex) -> str:
+        if not config.multi:
+            only = library.syncers[0]
+            source = only.source
+            return _dumps(
+                {
+                    "name": config.name,
+                    "language": source.language,
+                    "source": only.source_info(),
+                    **ix.overview(source.name),
+                }
             )
-        )
+        sources = [
+            {
+                "name": s.source.name,
+                "description": s.source.description,
+                "language": s.source.language,
+                "source": s.source_info(),
+                **ix.overview(s.source.name),
+            }
+            for s in library.syncers
+        ]
+        return _dumps({"name": config.name, "sources": sources})
 
-    @tool("list_docs")
-    def list_docs(path_prefix: PathPrefix = None, filters: Filters = None) -> CallToolResult:
-        return run(lambda ix: _dumps(ix.list_docs(path_prefix, filters)))
+    def docs_overview() -> CallToolResult:
+        return run(overview)
 
-    @tool("search_docs")
+    def list_docs(path_prefix: PathPrefix = None, filters: Filters = None, source: ListSource = None) -> CallToolResult:
+        return run(lambda ix: _dumps(ix.list_docs(path_prefix, filters, source)), source)
+
     def search_docs(
         query: Annotated[str, Field(description=text["query"])],
         filters: Filters = None,
         path_prefix: PathPrefix = None,
         limit: Annotated[int, Field(description=text["limit"])] = 10,
+        source: SearchSource = None,
     ) -> CallToolResult:
-        return run(lambda ix: _dumps(ix.search(query, filters, path_prefix, limit)))
+        return run(lambda ix: _dumps(ix.search(query, filters, path_prefix, limit, source)), source)
 
-    @tool("read_doc")
     def read_doc(
         path: Annotated[str, Field(description=text["path"])],
         section: Annotated[str | None, Field(description=text["section"])] = None,
+        source: ReadSource = None,
     ) -> CallToolResult:
-        return run(lambda ix: ix.read_doc(path, section))
+        return run(lambda ix: ix.read_doc(path, section, source), source)
 
-    @tool("get_section")
     def get_section(anchor: Annotated[str, Field(description=text["anchor"])]) -> CallToolResult:
         return run(lambda ix: ix.get_section(anchor))
+
+    tools = []
+    for fn in (docs_overview, list_docs, search_docs, read_doc, get_section):
+        tool = Tool.from_function(
+            fn, name=fn.__name__, description=text[fn.__name__], annotations=READ_ONLY, structured_output=False
+        )
+        if not config.multi:  # one source: nothing to choose (SPEC.md §7.4)
+            tool.parameters.get("properties", {}).pop("source", None)
+        tools.append(tool)
+    mcp = MCPServer(name="docs-mcp", version=__version__, instructions=instructions(config), tools=tools)
 
     @mcp.custom_route("/healthz", methods=["GET"])
     async def healthz(_: Request) -> JSONResponse:
@@ -140,7 +197,7 @@ def build_mcp(config: Config, syncer: Syncer) -> MCPServer:
 
     @mcp.custom_route("/readyz", methods=["GET"])
     async def readyz(_: Request) -> JSONResponse:
-        status = syncer.status()
+        status = library.status()
         return JSONResponse(status, status_code=200 if status["ready"] else 503)
 
     if config.oauth_issuer and config.public_url:
@@ -153,9 +210,13 @@ def build_mcp(config: Config, syncer: Syncer) -> MCPServer:
             mcp.custom_route(path, methods=["GET"])(protected_resource)
 
     @mcp.custom_route("/refresh", methods=["POST"])
-    async def refresh(_: Request) -> JSONResponse:
-        ok = await syncer.sync()
-        return JSONResponse(syncer.status(), status_code=200 if ok else 500)
+    async def refresh(request: Request) -> Response:
+        name = request.query_params.get("source")
+        if name is not None and name not in library.by_name:
+            names = ", ".join(library.by_name)
+            return PlainTextResponse(f"No source '{name}'. Sources: {names}.\n", status_code=404)
+        ok = await library.sync(name)
+        return JSONResponse(library.status(), status_code=200 if ok else 500)
 
     return mcp
 
@@ -261,9 +322,9 @@ def _hostname(host: str) -> str:
     return host.split(":", 1)[0]
 
 
-def build_app(config: Config) -> tuple[ASGIApp, Syncer]:
-    syncer = Syncer(config)
-    mcp = build_mcp(config, syncer)
+def build_app(config: Config) -> tuple[ASGIApp, Library]:
+    library = Library(config)
+    mcp = build_mcp(config, library)
     app: Starlette = mcp.streamable_http_app(
         stateless_http=True,
         json_response=True,
@@ -274,11 +335,11 @@ def build_app(config: Config) -> tuple[ASGIApp, Syncer]:
 
     @asynccontextmanager
     async def lifespan(a: Starlette) -> AsyncIterator[Any]:
-        task = asyncio.create_task(syncer.run_forever())
+        task = asyncio.create_task(library.run_forever())
         async with inner(a) as state:
             yield state
         task.cancel()
 
     app.router.lifespan_context = lifespan
     checker = TokenChecker(config) if config.oauth_issuer else None
-    return Guard(app, config, checker), syncer
+    return Guard(app, config, checker), library

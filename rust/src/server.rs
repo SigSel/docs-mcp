@@ -1,11 +1,11 @@
 //! The MCP tools and the HTTP app around them (SPEC.md §2, §6).
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use axum::Router;
 use axum::body::Body;
-use axum::extract::{Request, State};
+use axum::extract::{Query, Request, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Json, Response};
@@ -23,7 +23,7 @@ use subtle::ConstantTimeEq;
 use crate::config::Config;
 use crate::index::{DocIndex, Filters, ToolFailure};
 use crate::oauth::{METADATA, Refusal, TokenChecker, metadata, metadata_path, metadata_url};
-use crate::source::Syncer;
+use crate::source::Library;
 
 const INSTRUCTIONS: &str = "Documentation for {name}{written}. Use search_docs to find what is relevant to a \
 question, then read_doc to read a page or one of its sections. Search with keywords in {lang}, even when the user \
@@ -56,12 +56,26 @@ left out.";
 const SECTION: &str = "Optional anchor (e.g. 'rs-201') or heading text.";
 const ANCHOR: &str = "The anchor or ID, e.g. 'rs-203'. Case-insensitive.";
 
+// With DOCS_SOURCES (SPEC.md §7.4): the instructions after the list of sources, and the `source` parameter.
+const INSTRUCTIONS_SOURCES: &str = "Use search_docs to find what is relevant to a question, then read_doc to read \
+a page or file. search_docs searches every source unless you name one. Search with keywords in the language of the \
+source you expect the answer in, even when the user writes in another language, and answer in the user's language. \
+Files that are not Markdown come back as they are, in a code block. get_section looks up a heading anchor or ID, such \
+as a rule number, across all sources. docs_overview lists each source's metadata fields and values you can filter \
+on; list_docs browses a source. Cite pages by source and path, or by url when present.";
+const SEARCH_SOURCE: &str = "Only this source. Leave it out to search all of them.";
+const LIST_SOURCE: &str = "Only this source. Leave it out to list all of them.";
+const READ_SOURCE: &str = "The page's source, as search_docs and list_docs return it. Needed only when the path is \
+in several sources.";
+
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ListArgs {
     #[schemars(description = PATH_PREFIX)]
     path_prefix: Option<String>,
     #[schemars(description = FILTERS)]
     filters: Option<Filters>,
+    #[schemars(description = LIST_SOURCE)]
+    source: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -74,6 +88,8 @@ pub struct SearchArgs {
     path_prefix: Option<String>,
     #[schemars(description = LIMIT)]
     limit: Option<i64>,
+    #[schemars(description = SEARCH_SOURCE)]
+    source: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -82,6 +98,8 @@ pub struct ReadArgs {
     path: String,
     #[schemars(description = SECTION)]
     section: Option<String>,
+    #[schemars(description = READ_SOURCE)]
+    source: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -92,23 +110,23 @@ pub struct SectionArgs {
 
 #[derive(Clone)]
 pub struct DocsServer {
-    syncer: Arc<Syncer>,
+    library: Arc<Library>,
     config: Arc<Config>,
     /// The tools with the configured language in their descriptions; `#[tool_handler]` serves this one.
     tool_router: ToolRouter<Self>,
 }
 
 impl DocsServer {
-    fn run(&self, f: impl FnOnce(&DocIndex) -> Result<String, ToolFailure>) -> CallToolResult {
-        let Some(index) = self.syncer.index() else {
-            let error = self
-                .syncer
-                .last_error()
-                .map(|e| format!(" Last error: {e}"))
-                .unwrap_or_default();
-            return CallToolResult::error(vec![ContentBlock::text(format!(
-                "Index not ready yet.{error}"
-            ))]);
+    fn run(
+        &self,
+        source: Option<&str>,
+        f: impl FnOnce(&DocIndex) -> Result<String, ToolFailure>,
+    ) -> CallToolResult {
+        if let Some(failure) = source.and_then(|s| self.library.check_source(s)) {
+            return CallToolResult::error(vec![ContentBlock::text(failure)]);
+        }
+        let Some(index) = self.library.index() else {
+            return CallToolResult::error(vec![ContentBlock::text(self.library.not_ready())]);
         };
         match f(&index) {
             Ok(text) => CallToolResult::success(vec![ContentBlock::text(text)]),
@@ -119,10 +137,10 @@ impl DocsServer {
 
 #[tool_router]
 impl DocsServer {
-    pub fn new(syncer: Arc<Syncer>, config: Arc<Config>) -> Self {
-        let tool_router = localize(Self::tool_router(), &language(&config));
+    pub fn new(library: Arc<Library>, config: Arc<Config>) -> Self {
+        let tool_router = localize(Self::tool_router(), &language(&config), config.multi);
         Self {
-            syncer,
+            library,
             config,
             tool_router,
         }
@@ -131,22 +149,41 @@ impl DocsServer {
     #[tool(name = "docs_overview", description = DOCS_OVERVIEW,
            annotations(read_only_hint = true, open_world_hint = false, destructive_hint = false, idempotent_hint = true))]
     async fn docs_overview(&self) -> CallToolResult {
-        self.run(|ix| {
-            let mut out = serde_json::Map::new();
-            out.insert("name".into(), self.config.name.clone().into());
-            out.insert("language".into(), self.config.language.clone().into());
-            out.insert("source".into(), self.syncer.source_info());
-            out.extend(ix.overview());
-            Ok(serde_json::Value::Object(out).to_string())
+        self.run(None, |ix| {
+            let overview = |syncer: &crate::source::Syncer, described: bool| {
+                let source = &syncer.source;
+                let mut out = serde_json::Map::new();
+                out.insert("name".into(), source.name.clone().into());
+                if described {
+                    out.insert("description".into(), source.description.clone().into());
+                }
+                out.insert("language".into(), source.language.clone().into());
+                out.insert("source".into(), syncer.source_info());
+                out.extend(ix.overview(&source.name));
+                out
+            };
+            if !self.config.multi {
+                let mut out = overview(&self.library.syncers[0], false);
+                out.insert("name".into(), self.config.name.clone().into());
+                return Ok(serde_json::Value::Object(out).to_string());
+            }
+            let sources: Vec<serde_json::Value> = self
+                .library
+                .syncers
+                .iter()
+                .map(|s| serde_json::Value::Object(overview(s, true)))
+                .collect();
+            Ok(serde_json::json!({"name": self.config.name, "sources": sources}).to_string())
         })
     }
 
     #[tool(name = "list_docs", description = LIST_DOCS,
            annotations(read_only_hint = true, open_world_hint = false, destructive_hint = false, idempotent_hint = true))]
     async fn list_docs(&self, Parameters(args): Parameters<ListArgs>) -> CallToolResult {
-        self.run(|ix| {
+        let source = args.source.as_deref();
+        self.run(source, |ix| {
             Ok(ix
-                .list_docs(args.path_prefix.as_deref(), args.filters.as_ref())
+                .list_docs(args.path_prefix.as_deref(), args.filters.as_ref(), source)
                 .to_string())
         })
     }
@@ -154,12 +191,14 @@ impl DocsServer {
     #[tool(name = "search_docs", description = SEARCH_DOCS,
            annotations(read_only_hint = true, open_world_hint = false, destructive_hint = false, idempotent_hint = true))]
     async fn search_docs(&self, Parameters(args): Parameters<SearchArgs>) -> CallToolResult {
-        self.run(|ix| {
+        let source = args.source.as_deref();
+        self.run(source, |ix| {
             ix.search(
                 &args.query,
                 args.filters.as_ref(),
                 args.path_prefix.as_deref(),
                 args.limit.unwrap_or(10),
+                source,
             )
             .map(|v| v.to_string())
         })
@@ -168,13 +207,16 @@ impl DocsServer {
     #[tool(name = "read_doc", description = READ_DOC,
            annotations(read_only_hint = true, open_world_hint = false, destructive_hint = false, idempotent_hint = true))]
     async fn read_doc(&self, Parameters(args): Parameters<ReadArgs>) -> CallToolResult {
-        self.run(|ix| ix.read_doc(&args.path, args.section.as_deref()))
+        let source = args.source.as_deref();
+        self.run(source, |ix| {
+            ix.read_doc(&args.path, args.section.as_deref(), source)
+        })
     }
 
     #[tool(name = "get_section", description = GET_SECTION,
            annotations(read_only_hint = true, open_world_hint = false, destructive_hint = false, idempotent_hint = true))]
     async fn get_section(&self, Parameters(args): Parameters<SectionArgs>) -> CallToolResult {
-        self.run(|ix| ix.get_section(&args.anchor))
+        self.run(None, |ix| ix.get_section(&args.anchor))
     }
 }
 
@@ -187,16 +229,34 @@ impl ServerHandler for DocsServer {
     }
 }
 
-/// `{lang}` in the descriptions and instructions (SPEC.md §6).
+/// `{lang}` in the descriptions and instructions (SPEC.md §6, §7.4).
 fn language(config: &Config) -> String {
-    config
+    if config.multi {
+        return "the language of the source you search".into();
+    }
+    config.sources[0]
         .language
         .clone()
         .unwrap_or_else(|| "the language of the documentation".into())
 }
 
 fn instructions(config: &Config) -> String {
-    let written = config
+    if config.multi {
+        let mut lines = vec![format!(
+            "Documentation and reference repositories for {}, in {} sources:",
+            config.name,
+            config.sources.len()
+        )];
+        for s in &config.sources {
+            let description = s.description.as_deref().unwrap_or("");
+            lines.push(match &s.language {
+                Some(l) => format!("- {} ({l}): {description}", s.name),
+                None => format!("- {}: {description}", s.name),
+            });
+        }
+        return format!("{}\n\n{INSTRUCTIONS_SOURCES}", lines.join("\n"));
+    }
+    let written = config.sources[0]
         .language
         .as_ref()
         .map(|l| format!(", written in {l}"))
@@ -207,8 +267,9 @@ fn instructions(config: &Config) -> String {
         .replace("{lang}", &language(config))
 }
 
-/// Puts the configured language into the tool and parameter descriptions.
-fn localize(mut router: ToolRouter<DocsServer>, lang: &str) -> ToolRouter<DocsServer> {
+/// Puts the configured language into the tool and parameter descriptions. With one source, there is no `source`
+/// to choose (SPEC.md §7.4).
+fn localize(mut router: ToolRouter<DocsServer>, lang: &str, multi: bool) -> ToolRouter<DocsServer> {
     fn replace(value: &mut serde_json::Value, lang: &str) {
         match value {
             serde_json::Value::String(s) if s.contains("{lang}") => *s = s.replace("{lang}", lang),
@@ -223,6 +284,13 @@ fn localize(mut router: ToolRouter<DocsServer>, lang: &str) -> ToolRouter<DocsSe
         }
         let mut schema = serde_json::Value::Object((*route.attr.input_schema).clone());
         replace(&mut schema, lang);
+        if !multi
+            && let Some(properties) = schema
+                .get_mut("properties")
+                .and_then(serde_json::Value::as_object_mut)
+        {
+            properties.remove("source");
+        }
         if let serde_json::Value::Object(map) = schema {
             route.attr.input_schema = Arc::new(map);
         }
@@ -252,7 +320,7 @@ pub fn startup_warnings(config: &Config) -> Vec<&'static str> {
 
 #[derive(Clone)]
 struct AppState {
-    syncer: Arc<Syncer>,
+    library: Arc<Library>,
     config: Arc<Config>,
     /// Host names already logged as refused, so a scanner cannot flood the log.
     refused: Arc<Mutex<HashSet<String>>>,
@@ -406,8 +474,8 @@ async fn healthz() -> Json<serde_json::Value> {
 }
 
 async fn readyz(State(state): State<AppState>) -> Response {
-    let status = state.syncer.status();
-    let code = if status.ready {
+    let status = state.library.status();
+    let code = if status["ready"] == serde_json::json!(true) {
         StatusCode::OK
     } else {
         StatusCode::SERVICE_UNAVAILABLE
@@ -415,18 +483,28 @@ async fn readyz(State(state): State<AppState>) -> Response {
     (code, Json(status)).into_response()
 }
 
-async fn refresh(State(state): State<AppState>) -> Response {
-    let ok = state.syncer.sync().await;
+async fn refresh(
+    State(state): State<AppState>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    let name = query.get("source").map(String::as_str);
+    if let Some(name) = name
+        && !state.library.has(name)
+    {
+        let body = format!("No source '{name}'. Sources: {}.\n", state.library.names());
+        return (StatusCode::NOT_FOUND, body).into_response();
+    }
+    let ok = state.library.sync(name).await;
     let code = if ok {
         StatusCode::OK
     } else {
         StatusCode::INTERNAL_SERVER_ERROR
     };
-    (code, Json(state.syncer.status())).into_response()
+    (code, Json(state.library.status())).into_response()
 }
 
-pub fn app(config: Arc<Config>, syncer: Arc<Syncer>) -> Router {
-    let server = DocsServer::new(syncer.clone(), config.clone());
+pub fn app(config: Arc<Config>, library: Arc<Library>) -> Router {
+    let server = DocsServer::new(library.clone(), config.clone());
     let mcp = StreamableHttpService::new(
         move || Ok(server.clone()),
         Arc::new(LocalSessionManager::default()),
@@ -463,7 +541,7 @@ pub fn app(config: Arc<Config>, syncer: Arc<Syncer>) -> Router {
         }
     }
     let state = AppState {
-        syncer,
+        library,
         config,
         refused: Arc::default(),
         checker,

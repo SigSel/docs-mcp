@@ -58,6 +58,9 @@ the Starlight, VitePress and Zensical variants.
 | `list_docs(path_prefix?, filters?)` | Browse pages with their metadata |
 | `docs_overview()` | Source, commit, language, folders, and every metadata field with its values |
 
+With [several sources](#several-sources), `search_docs`, `list_docs` and
+`read_doc` also take a `source`.
+
 All five are read-only. A typical exchange: *"Can I use unwrap in our Rust
 service?"* The assistant calls `search_docs("unwrap")` → `rust/rules.mdx#rs-203`,
 then `read_doc("rust/rules.mdx", "rs-203")`, and answers citing RS-203 with a
@@ -210,6 +213,52 @@ A git command that hangs, for example because the host stopped answering, is
 killed after `DOCS_GIT_TIMEOUT_SECONDS` (default 120). The docs from the last
 good pull stay in service, and `last_error` in `/readyz` says what happened.
 
+## Several sources
+
+One docs-mcp can serve more than the handbook: a repo of pipeline templates, a
+project template, any repo your assistants should be able to read. Describe each
+source in `DOCS_SOURCES` (or in a mounted file, with `DOCS_SOURCES_FILE`)
+instead of `DOCS_REPO_URL` and the other per-source variables:
+
+```yaml
+- name: handbook
+  description: The dev handbook. Rules and guidance for Rust, Python and our workflow.
+  repo: https://dev.azure.com/ORG/PROJECT/_git/dev-handbook
+  dir: src/content/docs
+  language: Norwegian Nynorsk
+  site_url: https://handbook.example.internal/dev-handbook/
+- name: ci-templates
+  description: Azure DevOps pipeline templates. Use them when writing or reviewing azure-pipelines.yml.
+  repo: https://dev.azure.com/ORG/PROJECT/_git/ci-templates
+  include: ["**/*.yml", "**/*.yaml", "**/*.md"]
+  language: English
+- name: python-project-template
+  description: The template every new Python project starts from. Layout, pyproject.toml, tooling.
+  repo: https://dev.azure.com/ORG/PROJECT/_git/python-project-template
+  include: "**/*"
+```
+
+- **The description is for the model.** The instructions docs-mcp gives the
+  assistant list every source with its description. Say what the source is,
+  and when to use it.
+- **Files that are not Markdown are served as written**, in a code block: YAML,
+  `pyproject.toml`, a `Dockerfile`. Include them with globs. Files over 1 MB,
+  binary files and files that usually hold secrets (`.env`, `*.pem`, `*.key`,
+  `*.p12`, `*.pfx`) are skipped.
+- **Search covers every source**, unless the model names one. Results, pages
+  and listings say which source they come from.
+- **Each source syncs on its own.** A broken repo does not hold up the others.
+  `/readyz` reports each source, and turns `200` only once all of them have
+  loaded, so a deployment with a broken new source never takes over from a
+  working one. `POST /refresh?source=<name>` updates one source.
+- **Shared by all sources:** the git credentials, the refresh interval, the
+  cache and every `MCP_*` setting. One git account reads every repo, so give it
+  exactly these.
+- **Whoever can change a source can steer the assistants that read it**, as
+  with the handbook. Require review on every served repo.
+
+Every key is in [SPEC.md §7](SPEC.md#7-several-sources).
+
 ## Deploying
 
 ### Before you deploy
@@ -324,7 +373,7 @@ justfile           build, test, lint, run, compare, eval, image, measure
 ## Testing
 
 ```sh
-just test            # 195 checks × 2 implementations
+just test            # 234 checks × 2 implementations
 just compare         # every page, section and 180+ searches, diffed across both
 just eval            # search quality for Nynorsk, Bokmål and English questions
 just lint            # clippy pedantic, ruff
@@ -346,6 +395,7 @@ To change behaviour:
   when it writes the query (see [Languages](#languages)). If that turns out not
   to be enough, multilingual embeddings are the next step, at the cost of
   hosting a model.
-- **One source per server.** For several handbooks, run several containers.
+- **One audience per server.** Everyone who can use docs-mcp can read every
+  source. For sources only some people may read, run a separate server.
 - **Tools only, no MCP resources or prompts.** The clients this is for use tools.
 - **HTML entities** such as `&nbsp;` are passed through as written.

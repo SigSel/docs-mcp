@@ -8,7 +8,9 @@ use indexmap::IndexMap;
 use regex::Regex;
 use serde_json::{Map, Value, json};
 
-use crate::content::{LINK, MetaValue, Metadata, Page, Section, glob_to_regex, parse_page};
+use crate::content::{
+    LINK, MetaValue, Metadata, Page, Section, glob_to_regex, parse_file, parse_page,
+};
 
 static TOKEN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[\p{L}\p{N}]+").expect("token regex"));
@@ -19,6 +21,8 @@ const PREFIX_FACTOR: f64 = 0.5;
 const PREFIX_MIN_LEN: usize = 3;
 const FUZZY_FACTOR: f64 = 0.3;
 const FUZZY_MIN_LEN: usize = 6;
+const MAX_FILE_BYTES: usize = 1_000_000;
+const SECRET_SUFFIXES: [&str; 4] = [".pem", ".key", ".p12", ".pfx"];
 
 /// Metadata filters: field name to one value or a list of values.
 pub type Filters = HashMap<String, FilterValue>;
@@ -77,6 +81,7 @@ pub fn discover(
                     stack.push((entry.path(), rel_path));
                 }
             } else if file_type.is_file()
+                && !secret(&name)
                 && inc.iter().any(|r| r.is_match(&rel_path))
                 && !exc.iter().any(|r| r.is_match(&rel_path))
             {
@@ -97,9 +102,81 @@ fn strip_extension(path: &str) -> &str {
     }
 }
 
-/// A section's own text as search sees it: links count as their text, not their URL.
+/// Files that usually hold secrets are never pages, whatever the globs say (SPEC.md §4.1).
+fn secret(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower == ".env"
+        || lower.starts_with(".env.")
+        || SECRET_SUFFIXES.iter().any(|s| lower.ends_with(s))
+}
+
+#[expect(
+    clippy::case_sensitive_file_extension_comparisons,
+    reason = "the name is lowercased first"
+)]
+fn is_markdown(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path).to_lowercase();
+    name.ends_with(".md") || name.ends_with(".mdx")
+}
+
+/// The pages under `root`: Markdown pages and file pages, without files that are too big or not text.
+pub fn load_pages(
+    root: &Path,
+    include: &[String],
+    exclude: &[String],
+    ignore_fields: &HashSet<String>,
+    root_name: &str,
+    source: &str,
+) -> anyhow::Result<Vec<Page>> {
+    if !root.is_dir() {
+        anyhow::bail!("docs directory not found: {}", root.display());
+    }
+    let mut pages = Vec::new();
+    for rel in discover(root, include, exclude)? {
+        let path = root.join(&rel);
+        if usize::try_from(std::fs::metadata(&path)?.len()).unwrap_or(usize::MAX) > MAX_FILE_BYTES {
+            continue;
+        }
+        let bytes = std::fs::read(&path)?;
+        if bytes.len() > MAX_FILE_BYTES || bytes.contains(&0) {
+            continue;
+        }
+        let text = String::from_utf8_lossy(&bytes);
+        let mut page = if is_markdown(&rel) {
+            parse_page(&rel, &text, ignore_fields, root_name)
+        } else {
+            parse_file(&rel, &text)
+        };
+        page.source = source.to_string();
+        pages.push(page);
+    }
+    Ok(pages)
+}
+
+/// A section's own text as search sees it: in Markdown, links count as their text, not their URL.
 fn search_text(page: &Page, section: &Section) -> String {
-    LINK.replace_all(&page.own_text(section), "$1").into_owned()
+    let text = page.own_text(section);
+    if page.file {
+        text
+    } else {
+        LINK.replace_all(&text, "$1").into_owned()
+    }
+}
+
+/// A file page's text in a code block that its own backticks cannot close (SPEC.md §4.7).
+fn fenced(page: &Page) -> String {
+    let mut text = page.body();
+    if !text.ends_with('\n') {
+        text.push('\n');
+    }
+    let longest = text.split(|c| c != '`').map(str::len).max().unwrap_or(0);
+    let fence = "`".repeat((longest + 1).max(3));
+    let name = page.path.rsplit('/').next().unwrap_or(&page.path);
+    let info = name
+        .rsplit_once('.')
+        .map_or(name, |(_, ext)| ext)
+        .to_lowercase();
+    format!("{fence}{info}\n{text}{fence}")
 }
 
 /// Levenshtein distance at most 1: one insertion, deletion or substitution (code points).
@@ -140,7 +217,15 @@ pub fn page_url(site_url: Option<&str>, path: &str, anchor: Option<&str>) -> Opt
     })
 }
 
-fn matches(page: &Page, filters: Option<&Filters>, path_prefix: Option<&str>) -> bool {
+fn matches(
+    page: &Page,
+    filters: Option<&Filters>,
+    path_prefix: Option<&str>,
+    source: Option<&str>,
+) -> bool {
+    if source.is_some_and(|s| page.source != s) {
+        return false;
+    }
     if let Some(prefix) = path_prefix.filter(|p| !p.is_empty())
         && !page.path.starts_with(prefix)
     {
@@ -193,10 +278,15 @@ struct Doc {
     length: f64,
 }
 
+/// One search index over the pages of every source that has loaded (SPEC.md §5, §7.3).
 pub struct DocIndex {
+    /// In configured source order, each source's sorted by path.
     pub pages: Vec<Page>,
-    by_path: HashMap<String, usize>,
-    site_url: Option<String>,
+    by_path: HashMap<(String, String), usize>,
+    site_urls: HashMap<String, Option<String>>,
+    names: Vec<String>,
+    order: HashMap<String, usize>,
+    multi: bool,
     docs: Vec<Doc>,
     /// Insertion-ordered, like the other implementations, so scores sum in the same order.
     postings: IndexMap<String, Vec<usize>>,
@@ -208,11 +298,21 @@ impl DocIndex {
         clippy::cast_precision_loss,
         reason = "section counts are far below 2^52"
     )]
-    pub fn new(pages: Vec<Page>, site_url: Option<String>) -> Self {
+    pub fn new(
+        pages: Vec<Page>,
+        site_urls: HashMap<String, Option<String>>,
+        names: Vec<String>,
+        multi: bool,
+    ) -> Self {
         let by_path = pages
             .iter()
             .enumerate()
-            .map(|(i, p)| (p.path.clone(), i))
+            .map(|(i, p)| ((p.source.clone(), p.path.clone()), i))
+            .collect();
+        let order = names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.clone(), i))
             .collect();
         let mut docs = Vec::new();
         let mut postings: IndexMap<String, Vec<usize>> = IndexMap::new();
@@ -269,47 +369,42 @@ impl DocIndex {
         Self {
             pages,
             by_path,
-            site_url,
+            site_urls,
+            names,
+            order,
+            multi,
             docs,
             postings,
             avgdl,
         }
     }
 
-    pub fn build(
-        root: &Path,
-        include: &[String],
-        exclude: &[String],
-        ignore_fields: &HashSet<String>,
-        root_name: &str,
-        site_url: Option<String>,
-    ) -> anyhow::Result<Self> {
-        if !root.is_dir() {
-            anyhow::bail!("docs directory not found: {}", root.display());
+    fn url(&self, page: &Page, anchor: Option<&str>) -> Option<String> {
+        if page.file {
+            return None;
         }
-        let mut pages = Vec::new();
-        for rel in discover(root, include, exclude)? {
-            let bytes = std::fs::read(root.join(&rel))?;
-            pages.push(parse_page(
-                &rel,
-                &String::from_utf8_lossy(&bytes),
-                ignore_fields,
-                root_name,
-            ));
-        }
-        Ok(Self::new(pages, site_url))
+        let site = self.site_urls.get(&page.source).and_then(Option::as_deref);
+        page_url(site, &page.path, anchor)
     }
 
-    fn url(&self, path: &str, anchor: Option<&str>) -> Option<String> {
-        page_url(self.site_url.as_deref(), path, anchor)
+    /// The entry, with `source` first when there are several sources (SPEC.md §7.4).
+    fn named(&self, page: &Page, entry: Map<String, Value>) -> Value {
+        if !self.multi {
+            return Value::Object(entry);
+        }
+        let mut out = Map::new();
+        out.insert("source".into(), json!(page.source));
+        out.extend(entry);
+        Value::Object(out)
     }
 
     // --- tools ---------------------------------------------------------------
 
-    pub fn overview(&self) -> Map<String, Value> {
+    pub fn overview(&self, source: &str) -> Map<String, Value> {
+        let pages: Vec<&Page> = self.pages.iter().filter(|p| p.source == source).collect();
         let mut folders: BTreeMap<&str, usize> = BTreeMap::new();
         let mut fields: BTreeMap<&str, BTreeMap<&str, usize>> = BTreeMap::new();
-        for page in &self.pages {
+        for page in &pages {
             let folder = page.path.split_once('/').map_or(".", |(f, _)| f);
             *folders.entry(folder).or_default() += 1;
             for (key, value) in &page.metadata {
@@ -321,7 +416,7 @@ impl DocIndex {
             }
         }
         let mut out = Map::new();
-        out.insert("page_count".into(), json!(self.pages.len()));
+        out.insert("page_count".into(), json!(pages.len()));
         out.insert(
             "folders".into(),
             folders
@@ -333,11 +428,16 @@ impl DocIndex {
         out
     }
 
-    pub fn list_docs(&self, path_prefix: Option<&str>, filters: Option<&Filters>) -> Value {
+    pub fn list_docs(
+        &self,
+        path_prefix: Option<&str>,
+        filters: Option<&Filters>,
+        source: Option<&str>,
+    ) -> Value {
         let pages: Vec<Value> = self
             .pages
             .iter()
-            .filter(|p| matches(p, filters, path_prefix))
+            .filter(|p| matches(p, filters, path_prefix, source))
             .map(|page| {
                 let mut entry = Map::new();
                 entry.insert("path".into(), json!(page.path));
@@ -345,11 +445,11 @@ impl DocIndex {
                 if let Some(d) = &page.description {
                     entry.insert("description".into(), json!(d));
                 }
-                if let Some(url) = self.url(&page.path, None) {
+                if let Some(url) = self.url(page, None) {
                     entry.insert("url".into(), json!(url));
                 }
                 entry.insert("metadata".into(), json!(page.metadata));
-                Value::Object(entry)
+                self.named(page, entry)
             })
             .collect();
         json!({"count": pages.len(), "pages": pages})
@@ -394,6 +494,7 @@ impl DocIndex {
         filters: Option<&Filters>,
         path_prefix: Option<&str>,
         limit: i64,
+        source: Option<&str>,
     ) -> Result<Value, ToolFailure> {
         let mut seen = HashSet::new();
         let terms: Vec<String> = tokenize(query)
@@ -437,15 +538,20 @@ impl DocIndex {
 
         let mut ranked: Vec<usize> = (0..n)
             .filter(|&i| {
-                scores[i] > 0.0 && matches(&self.pages[self.docs[i].page], filters, path_prefix)
+                scores[i] > 0.0
+                    && matches(&self.pages[self.docs[i].page], filters, path_prefix, source)
             })
             .collect();
         ranked.sort_by(|&a, &b| {
-            let (da, db) = (&self.docs[a], &self.docs[b]);
+            let (pa, pb) = (
+                &self.pages[self.docs[a].page],
+                &self.pages[self.docs[b].page],
+            );
             scores[b]
                 .total_cmp(&scores[a])
-                .then_with(|| self.pages[da.page].path.cmp(&self.pages[db.page].path))
-                .then_with(|| da.section.cmp(&db.section))
+                .then_with(|| self.order[&pa.source].cmp(&self.order[&pb.source]))
+                .then_with(|| pa.path.cmp(&pb.path))
+                .then_with(|| self.docs[a].section.cmp(&self.docs[b].section))
         });
         let mut results = Vec::new();
         let mut per_page: HashMap<usize, usize> = HashMap::new();
@@ -468,7 +574,7 @@ impl DocIndex {
             };
             hit.insert("section".into(), json!(heading));
             hit.insert("anchor".into(), json!(section.anchor));
-            if let Some(url) = self.url(&page.path, section.anchor.as_deref()) {
+            if let Some(url) = self.url(page, section.anchor.as_deref()) {
                 hit.insert("url".into(), json!(url));
             }
             hit.insert("score".into(), json!((scores[i] * 1000.0).round() / 1000.0));
@@ -479,7 +585,7 @@ impl DocIndex {
                 own
             };
             hit.insert("snippet".into(), json!(snippet(&text, &matched_terms)));
-            results.push(Value::Object(hit));
+            results.push(self.named(page, hit));
             if results.len() >= limit {
                 break;
             }
@@ -487,7 +593,7 @@ impl DocIndex {
         Ok(json!({"query": query, "count": results.len(), "results": results}))
     }
 
-    fn resolve(&self, path: &str) -> Result<&Page, ToolFailure> {
+    fn resolve(&self, path: &str, source: Option<&str>) -> Result<&Page, ToolFailure> {
         let p = path.trim_matches('/');
         let candidates: Vec<String> = if p.is_empty() {
             vec!["index.md".into(), "index.mdx".into()]
@@ -500,16 +606,44 @@ impl DocIndex {
                 format!("{p}/index.mdx"),
             ]
         };
-        if let Some(&i) = candidates.iter().find_map(|c| self.by_path.get(c)) {
-            return Ok(&self.pages[i]);
+        let names: Vec<&str> = match source {
+            Some(s) => vec![s],
+            None => self.names.iter().map(String::as_str).collect(),
+        };
+        let found: Vec<&Page> = names
+            .iter()
+            .filter_map(|name| {
+                candidates
+                    .iter()
+                    .find_map(|c| self.by_path.get(&((*name).to_string(), c.clone())))
+            })
+            .map(|&i| &self.pages[i])
+            .collect();
+        match found.as_slice() {
+            [page] => return Ok(page),
+            [] => {}
+            several => {
+                let names: Vec<&str> = several.iter().map(|p| p.source.as_str()).collect();
+                return Err(ToolFailure(format!(
+                    "'{path}' is in several sources: {}. Pass source to read_doc.",
+                    names.join(", ")
+                )));
+            }
         }
         let last = p.rsplit('/').next().unwrap_or(p).to_lowercase();
-        let similar: Vec<&str> = self
+        let similar: Vec<String> = self
             .pages
             .iter()
+            .filter(|pg| source.is_none_or(|s| pg.source == s))
             .filter(|pg| !last.is_empty() && pg.path.to_lowercase().contains(&last))
             .take(5)
-            .map(|pg| pg.path.as_str())
+            .map(|pg| {
+                if self.multi {
+                    format!("{} ({})", pg.path, pg.source)
+                } else {
+                    pg.path.clone()
+                }
+            })
             .collect();
         let hint = if similar.is_empty() {
             String::new()
@@ -521,8 +655,13 @@ impl DocIndex {
         )))
     }
 
-    pub fn read_doc(&self, path: &str, section: Option<&str>) -> Result<String, ToolFailure> {
-        let page = self.resolve(path)?;
+    pub fn read_doc(
+        &self,
+        path: &str,
+        section: Option<&str>,
+        source: Option<&str>,
+    ) -> Result<String, ToolFailure> {
+        let page = self.resolve(path, source)?;
         let Some(section) = section.filter(|s| !s.is_empty()) else {
             return Ok(self.render(page, None));
         };
@@ -584,13 +723,23 @@ impl DocIndex {
             ))),
             [(page, section)] => Ok(self.render(page, Some(section))),
             many => {
+                let read = if self.multi {
+                    "read_doc(path, section, source)"
+                } else {
+                    "read_doc(path, section)"
+                };
                 let mut lines = vec![format!(
-                    "Anchor '{anchor}' matches {} sections. Read one with read_doc(path, section):",
+                    "Anchor '{anchor}' matches {} sections. Read one with {read}:",
                     many.len()
                 )];
                 for (p, s) in many {
+                    let source = if self.multi {
+                        format!("{}: ", p.source)
+                    } else {
+                        String::new()
+                    };
                     lines.push(format!(
-                        "- {}#{} ({})",
+                        "- {source}{}#{} ({})",
                         p.path,
                         s.anchor.as_deref().unwrap_or(""),
                         s.heading.as_deref().unwrap_or("")
@@ -602,14 +751,16 @@ impl DocIndex {
     }
 
     fn render(&self, page: &Page, section: Option<&Section>) -> String {
-        let mut header = vec![
-            format!("path: {}", page.path),
-            format!("title: {}", collapse(&page.title)),
-        ];
+        let mut header = Vec::new();
+        if self.multi {
+            header.push(format!("source: {}", page.source));
+        }
+        header.push(format!("path: {}", page.path));
+        header.push(format!("title: {}", collapse(&page.title)));
         if let Some(d) = &page.description {
             header.push(format!("description: {}", collapse(d)));
         }
-        if let Some(url) = self.url(&page.path, section.and_then(|s| s.anchor.as_deref())) {
+        if let Some(url) = self.url(page, section.and_then(|s| s.anchor.as_deref())) {
             header.push(format!("url: {url}"));
         }
         if let Some(s) = section {
@@ -619,6 +770,7 @@ impl DocIndex {
             header.push(format!("{key}: {}", collapse(&value.values().join(", "))));
         }
         let body = match section {
+            _ if page.file => fenced(page),
             Some(s) => page.section_text(s),
             None => page.body(),
         };

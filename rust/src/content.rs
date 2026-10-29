@@ -64,7 +64,7 @@ pub struct Section {
     pub end: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Page {
     pub path: String,
     pub title: String,
@@ -72,6 +72,9 @@ pub struct Page {
     pub metadata: Metadata,
     pub lines: Vec<String>,
     pub sections: Vec<Section>,
+    /// Not Markdown: served as written (SPEC.md §4.7).
+    pub file: bool,
+    pub source: String,
 }
 
 impl Page {
@@ -473,5 +476,35 @@ pub fn parse_page(
         metadata: extract_metadata(&front, ignore_fields),
         lines: lines.into_iter().map(|l| l.text).collect(),
         sections,
+        file: false,
+        source: String::new(),
+    }
+}
+
+/// A file that is not Markdown: one intro section holding the text as written (SPEC.md §4.7).
+pub fn parse_file(path: &str, input: &str) -> Page {
+    let text = input
+        .strip_prefix('\u{feff}')
+        .unwrap_or(input)
+        .replace("\r\n", "\n");
+    let lines: Vec<String> = text.split('\n').map(String::from).collect();
+    let n = lines.len();
+    Page {
+        path: path.to_string(),
+        title: path.rsplit('/').next().unwrap_or(path).to_string(),
+        description: None,
+        metadata: Metadata::default(),
+        lines,
+        sections: vec![Section {
+            level: 0,
+            heading: None,
+            anchor: None,
+            explicit: false,
+            start: 0,
+            own_end: n,
+            end: n,
+        }],
+        file: true,
+        source: String::new(),
     }
 }

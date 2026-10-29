@@ -1,4 +1,4 @@
-"""Keeping the index in step with the source: git clone/pull or a local directory (SPEC.md §3)."""
+"""Keeping the index in step with the sources: git clone/pull or a local directory (SPEC.md §3, §7.2)."""
 
 from __future__ import annotations
 
@@ -10,13 +10,15 @@ import os
 import shlex
 import shutil
 import signal
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from .config import Config
-from .index import DocIndex
+from .config import Config, Source
+from .content import Page
+from .index import DocIndex, load_pages
 
 log = logging.getLogger("docs_mcp")
 RETRY_SECONDS = 10
@@ -38,7 +40,7 @@ def docs_root(base: Path, docs_dir: str) -> Path:
     return root
 
 
-def git_env(config: Config) -> dict[str, str]:
+def git_env(config: Config, repo_url: str | None) -> dict[str, str]:
     # git sends the token header after a redirect too, to wherever it points.
     env = {
         **os.environ,
@@ -47,8 +49,7 @@ def git_env(config: Config) -> dict[str, str]:
         "GIT_CONFIG_KEY_0": "http.followRedirects",
         "GIT_CONFIG_VALUE_0": "false",
     }
-    url = config.repo_url or ""
-    parts = urlsplit(url)
+    parts = urlsplit(repo_url or "")
     if config.git_token and parts.scheme in ("http", "https"):
         origin = f"{parts.scheme}://{parts.netloc.rsplit('@', 1)[-1]}/"
         basic = base64.b64encode(f"{config.git_username}:{config.git_token}".encode()).decode()
@@ -68,42 +69,45 @@ def git_env(config: Config) -> dict[str, str]:
 
 
 class Syncer:
-    def __init__(self, config: Config) -> None:
+    """Keeps one source's pages in step with its repo or folder."""
+
+    def __init__(self, config: Config, source: Source, repo: Path, changed: Callable[[], Awaitable[None]]) -> None:
         self.config = config
-        self.index: DocIndex | None = None
+        self.source = source
+        self.pages: list[Page] | None = None
+        self.loaded = False  # the index holds this source's pages
         self.commit: str | None = None
         self.synced_at: str | None = None
         self.last_error: str | None = None
+        self._changed = changed
         self._lock = asyncio.Lock()
-        self._repo = config.cache_dir / "repo"
-        self._env = git_env(config)
-        if config.repo_url:
-            shutil.rmtree(config.cache_dir, ignore_errors=True)
+        self._repo = repo
+        self._env = git_env(config, source.repo_url)
 
     def status(self) -> dict[str, Any]:
         return {
-            "ready": self.index is not None,
-            "pages": len(self.index.pages) if self.index else 0,
+            "ready": self.loaded,
+            "pages": len(self.pages) if self.pages is not None else 0,
             "commit": self.commit,
             "synced_at": self.synced_at,
             "last_error": self.last_error,
         }
 
     def source_info(self) -> dict[str, Any]:
-        c = self.config
-        if c.repo_url:
+        s = self.source
+        if s.repo_url:
             return {
                 "type": "git",
-                "repo": redact(c.repo_url),
-                "ref": c.ref,
-                "dir": c.docs_dir,
+                "repo": redact(s.repo_url),
+                "ref": s.ref,
+                "dir": s.docs_dir,
                 "commit": self.commit,
                 "synced_at": self.synced_at,
             }
         return {
             "type": "local",
-            "path": str(c.local_path),
-            "dir": c.docs_dir,
+            "path": str(s.local_path),
+            "dir": s.docs_dir,
             "commit": None,
             "synced_at": self.synced_at,
         }
@@ -111,27 +115,31 @@ class Syncer:
     async def sync(self) -> bool:
         async with self._lock:
             try:
-                if self.config.repo_url:
+                s = self.source
+                if s.repo_url:
                     commit = await self._pull()
-                    changed = commit != self.commit or self.index is None
+                    changed = commit != self.commit or self.pages is None
                     base = self._repo
                 else:
                     commit, changed = None, True
-                    base = self.config.local_path or Path()
+                    base = s.local_path or Path()
                 if changed:
-                    c = self.config
-                    root = docs_root(base, c.docs_dir)
-                    index = await asyncio.to_thread(
-                        DocIndex.build, root, c.include, c.exclude, c.ignore_fields, c.name, c.site_url
+                    root = docs_root(base, s.docs_dir)
+                    pages = await asyncio.to_thread(
+                        load_pages, root, s.include, s.exclude, s.ignore_fields, self.config.name, s.name
                     )
-                    self.index, self.commit = index, commit
-                    log.info("indexed %d pages%s", len(index.pages), f" at {commit[:12]}" if commit else "")
+                    self.pages, self.commit = pages, commit
+                    await self._changed()
+                    self.loaded = True
+                    where = f" from {s.name}" if self.config.multi else ""
+                    log.info("indexed %d pages%s%s", len(pages), where, f" at {commit[:12]}" if commit else "")
                 self.synced_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
                 self.last_error = None
                 return True
             except Exception as e:
                 self.last_error = str(e) or type(e).__name__
-                log.error("sync failed: %s", self.last_error)
+                where = f" for {self.source.name}" if self.config.multi else ""
+                log.error("sync failed%s: %s", where, self.last_error)
                 return False
 
     async def run_forever(self) -> None:
@@ -169,7 +177,7 @@ class Syncer:
         return out.decode().strip()
 
     async def _pull(self) -> str:
-        c = self.config
+        c = self.source
         assert c.repo_url
         if not (self._repo / ".git").exists():
             shutil.rmtree(self._repo, ignore_errors=True)
@@ -182,3 +190,63 @@ class Syncer:
             await self._git("fetch", "--quiet", "--depth", "1", "origin", c.ref or "HEAD", cwd=self._repo)
             await self._git("reset", "--quiet", "--hard", "FETCH_HEAD", cwd=self._repo)
         return await self._git("rev-parse", "HEAD", cwd=self._repo)
+
+
+class Library:
+    """Every source, and one search index over all that have loaded (SPEC.md §7.2)."""
+
+    def __init__(self, config: Config) -> None:
+        self.config = config
+        self.index: DocIndex | None = None
+        self._rebuild_lock = asyncio.Lock()
+        if any(s.repo_url for s in config.sources):
+            shutil.rmtree(config.cache_dir, ignore_errors=True)
+        self.syncers = [
+            Syncer(config, s, config.cache_dir / s.name / "repo" if config.multi else config.cache_dir / "repo",
+                   self._rebuild)
+            for s in config.sources
+        ]  # fmt: skip
+        self.by_name = {s.source.name: s for s in self.syncers}
+
+    async def _rebuild(self) -> None:
+        """Builds the index over every source that has pages, off to the side, and swaps it in."""
+        async with self._rebuild_lock:
+            pages = [p for s in self.syncers if s.pages is not None for p in s.pages]
+            names = [s.source.name for s in self.syncers]
+            sites = {s.source.name: s.source.site_url for s in self.syncers}
+            self.index = await asyncio.to_thread(DocIndex, pages, sites, names, self.config.multi)
+
+    def status(self) -> dict[str, Any]:
+        if not self.config.multi:
+            return self.syncers[0].status()
+        sources = [{"name": s.source.name, **s.status()} for s in self.syncers]
+        return {
+            "ready": all(s["ready"] for s in sources),
+            "pages": sum(s["pages"] for s in sources),
+            "sources": sources,
+        }
+
+    def not_ready(self) -> str:
+        """The tool error for when no source has loaded yet (SPEC.md §3.3, §7.2)."""
+        if not self.config.multi:
+            error = self.syncers[0].last_error
+            return f"Index not ready yet.{f' Last error: {error}' if error else ''}"
+        errors = "".join(f" Last error in {s.source.name}: {s.last_error}" for s in self.syncers if s.last_error)
+        return f"Index not ready yet.{errors}"
+
+    def check_source(self, name: str) -> str | None:
+        """The tool error for a source that is not configured or has not loaded, if any (SPEC.md §7.3)."""
+        syncer = self.by_name.get(name)
+        if syncer is None:
+            return f"No source '{name}'. Sources: {', '.join(self.by_name)}."
+        if not syncer.loaded:
+            error = f" Last error: {syncer.last_error}" if syncer.last_error else ""
+            return f"Source '{name}' is not ready yet.{error}"
+        return None
+
+    async def sync(self, name: str | None = None) -> bool:
+        syncers = [self.by_name[name]] if name is not None else self.syncers
+        return all(await asyncio.gather(*(s.sync() for s in syncers)))
+
+    async def run_forever(self) -> None:
+        await asyncio.gather(*(s.run_forever() for s in self.syncers))

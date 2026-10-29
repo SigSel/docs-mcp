@@ -3,13 +3,46 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use yaml_rust2::{Yaml, YamlLoader};
+
 pub const DEFAULT_IGNORE_FIELDS: &str = "layout,template,hero,sidebar,sidebar_position,sidebar_label,\
 sidebar_class_name,slug,id,pagefind,editUrl,lastUpdated,prev,next,head,banner,tableOfContents,draft,hide,search,\
 outline,aside,navbar,footer,pagination_next,pagination_prev,custom_edit_url,displayed_sidebar,\
 toc_min_heading_level,toc_max_heading_level";
 
+const DEFAULT_INCLUDE: &str = "**/*.md,**/*.mdx";
+/// The variables `DOCS_SOURCES` replaces (SPEC.md §7.1).
+const PER_SOURCE: [&str; 9] = [
+    "DOCS_REPO_URL",
+    "DOCS_LOCAL_PATH",
+    "DOCS_REF",
+    "DOCS_DIR",
+    "DOCS_INCLUDE",
+    "DOCS_EXCLUDE",
+    "DOCS_IGNORE_FIELDS",
+    "DOCS_LANGUAGE",
+    "DOCS_SITE_URL",
+];
+const SOURCE_KEYS: [&str; 11] = [
+    "name",
+    "description",
+    "repo",
+    "path",
+    "ref",
+    "dir",
+    "include",
+    "exclude",
+    "ignore_fields",
+    "language",
+    "site_url",
+];
+
+/// One repo or folder to serve (SPEC.md §7.1).
 #[derive(Debug, Clone)]
-pub struct Config {
+pub struct Source {
+    pub name: String,
+    /// `None` for the single source of the `DOCS_*` variables.
+    pub description: Option<String>,
     pub repo_url: Option<String>,
     pub local_path: Option<PathBuf>,
     pub git_ref: Option<String>,
@@ -17,12 +50,19 @@ pub struct Config {
     pub include: Vec<String>,
     pub exclude: Vec<String>,
     pub ignore_fields: HashSet<String>,
+    pub language: Option<String>,
+    pub site_url: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Config {
+    pub sources: Vec<Source>,
+    /// `DOCS_SOURCES` is set: outputs name their source (SPEC.md §7).
+    pub multi: bool,
     pub refresh_seconds: u64,
     /// 0 means no limit.
     pub git_timeout_seconds: u64,
     pub name: String,
-    pub language: Option<String>,
-    pub site_url: Option<String>,
     pub git_username: String,
     pub git_token: Option<String>,
     pub git_ssh_key_file: Option<String>,
@@ -159,7 +199,8 @@ fn auth(env: &Env) -> Result<Auth, ConfigError> {
     Ok((token, issuer, public))
 }
 
-pub fn load(env: &Env) -> Result<Config, ConfigError> {
+/// The one source the `DOCS_*` variables describe.
+fn single_source(name: &str, env: &Env) -> Result<Source, ConfigError> {
     let repo_url = get("DOCS_REPO_URL", env)?;
     let local_path = get("DOCS_LOCAL_PATH", env)?;
     if repo_url.is_some() == local_path.is_some() {
@@ -167,6 +208,154 @@ pub fn load(env: &Env) -> Result<Config, ConfigError> {
             "set exactly one of DOCS_REPO_URL and DOCS_LOCAL_PATH".into(),
         ));
     }
+    let or = |v: Option<String>, d: &str| v.unwrap_or_else(|| d.to_string());
+    Ok(Source {
+        name: name.to_string(),
+        description: None,
+        repo_url,
+        local_path: local_path.map(PathBuf::from),
+        git_ref: get("DOCS_REF", env)?,
+        docs_dir: or(get("DOCS_DIR", env)?, "."),
+        include: list(Some(or(get("DOCS_INCLUDE", env)?, DEFAULT_INCLUDE))),
+        exclude: list(get("DOCS_EXCLUDE", env)?),
+        ignore_fields: list(Some(or(
+            get("DOCS_IGNORE_FIELDS", env)?,
+            DEFAULT_IGNORE_FIELDS,
+        )))
+        .into_iter()
+        .collect(),
+        language: get("DOCS_LANGUAGE", env)?,
+        site_url: get("DOCS_SITE_URL", env)?,
+    })
+}
+
+/// `DOCS_SOURCES`, checked (SPEC.md §7.1).
+fn sources(raw: &str, env: &Env) -> Result<Vec<Source>, ConfigError> {
+    let mut clash = Vec::new();
+    for name in PER_SOURCE {
+        if get(name, env)?.is_some() {
+            clash.push(name);
+        }
+    }
+    if !clash.is_empty() {
+        return Err(ConfigError(format!(
+            "DOCS_SOURCES replaces {}: set one or the other",
+            clash.join(", ")
+        )));
+    }
+    let docs = YamlLoader::load_from_str(raw)
+        .map_err(|e| ConfigError(format!("DOCS_SOURCES is not valid YAML: {e}")))?;
+    let items = match docs.into_iter().next() {
+        Some(Yaml::Array(items)) if !items.is_empty() => items,
+        _ => {
+            return Err(ConfigError(
+                "DOCS_SOURCES must be a non-empty YAML list of sources".into(),
+            ));
+        }
+    };
+    let mut out: Vec<Source> = Vec::new();
+    for (i, item) in items.iter().enumerate() {
+        let next = source(item, i + 1, &out)?;
+        out.push(next);
+    }
+    Ok(out)
+}
+
+fn valid_name(name: &str) -> bool {
+    name.split('-').all(|word| {
+        !word.is_empty()
+            && word
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+    })
+}
+
+fn source(item: &Yaml, number: usize, taken: &[Source]) -> Result<Source, ConfigError> {
+    let Yaml::Hash(map) = item else {
+        return Err(ConfigError(format!(
+            "DOCS_SOURCES: source #{number} is not a mapping"
+        )));
+    };
+    let value = |key: &str| {
+        map.get(&Yaml::String(key.into()))
+            .filter(|v| !matches!(v, Yaml::Null))
+    };
+    let name = value("name")
+        .and_then(Yaml::as_str)
+        .filter(|n| valid_name(n));
+    let label = name.map_or_else(|| format!("#{number}"), |n| format!("'{n}'"));
+    let fail = |message: String| ConfigError(format!("DOCS_SOURCES: source {label}: {message}"));
+    for key in map.keys() {
+        match key.as_str() {
+            Some(k) if SOURCE_KEYS.contains(&k) => {}
+            Some(k) => return Err(fail(format!("unknown key '{k}'"))),
+            None => return Err(fail(format!("unknown key {key:?}"))),
+        }
+    }
+    let Some(name) = name else {
+        return Err(fail(
+            "'name' must be lowercase letters and digits, words joined by single '-'".into(),
+        ));
+    };
+    if taken.iter().any(|s| s.name == name) {
+        return Err(fail("the name is used twice".into()));
+    }
+    let text = |key: &str| -> Result<Option<String>, ConfigError> {
+        match value(key) {
+            None => Ok(None),
+            Some(Yaml::String(s)) => Ok(Some(s.clone()).filter(|s| !s.is_empty())),
+            Some(_) => Err(fail(format!("'{key}' must be a string"))),
+        }
+    };
+    let strings = |key: &str, default: &str| -> Result<Vec<String>, ConfigError> {
+        match value(key) {
+            None => Ok(list(Some(default.to_string()))),
+            Some(Yaml::String(s)) => Ok(list(Some(s.clone()))),
+            Some(Yaml::Array(items)) if items.iter().all(|v| v.as_str().is_some()) => Ok(items
+                .iter()
+                .filter_map(Yaml::as_str)
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .map(String::from)
+                .collect()),
+            Some(_) => Err(fail(format!(
+                "'{key}' must be a string or a list of strings"
+            ))),
+        }
+    };
+    let Some(description) = text("description")? else {
+        return Err(fail(
+            "'description' is missing: say what the source is, and when to use it".into(),
+        ));
+    };
+    let (repo_url, local_path) = (text("repo")?, text("path")?);
+    if repo_url.is_some() == local_path.is_some() {
+        return Err(fail("set exactly one of 'repo' and 'path'".into()));
+    }
+    Ok(Source {
+        name: name.to_string(),
+        description: Some(description),
+        repo_url,
+        local_path: local_path.map(PathBuf::from),
+        git_ref: text("ref")?,
+        docs_dir: text("dir")?.unwrap_or_else(|| ".".into()),
+        include: strings("include", DEFAULT_INCLUDE)?,
+        exclude: strings("exclude", "")?,
+        ignore_fields: strings("ignore_fields", DEFAULT_IGNORE_FIELDS)?
+            .into_iter()
+            .collect(),
+        language: text("language")?,
+        site_url: text("site_url")?,
+    })
+}
+
+pub fn load(env: &Env) -> Result<Config, ConfigError> {
+    let name = get("DOCS_NAME", env)?.unwrap_or_else(|| "docs".into());
+    let raw_sources = get("DOCS_SOURCES", env)?;
+    let sources = match &raw_sources {
+        Some(raw) => sources(raw, env)?,
+        None => vec![single_source(&name, env)?],
+    };
     let (auth_token, oauth_issuer, public_url) = auth(env)?;
     let allowed_raw = get("MCP_ALLOWED_HOSTS", env)?;
     let allowed_hosts_default = allowed_raw.is_none();
@@ -175,23 +364,11 @@ pub fn load(env: &Env) -> Result<Config, ConfigError> {
     ));
     let or = |v: Option<String>, d: &str| v.unwrap_or_else(|| d.to_string());
     Ok(Config {
-        repo_url,
-        local_path: local_path.map(PathBuf::from),
-        git_ref: get("DOCS_REF", env)?,
-        docs_dir: or(get("DOCS_DIR", env)?, "."),
-        include: list(Some(or(get("DOCS_INCLUDE", env)?, "**/*.md,**/*.mdx"))),
-        exclude: list(get("DOCS_EXCLUDE", env)?),
-        ignore_fields: list(Some(or(
-            get("DOCS_IGNORE_FIELDS", env)?,
-            DEFAULT_IGNORE_FIELDS,
-        )))
-        .into_iter()
-        .collect(),
+        multi: raw_sources.is_some(),
+        sources,
         refresh_seconds: number("DOCS_REFRESH_SECONDS", env, 300)?,
         git_timeout_seconds: number("DOCS_GIT_TIMEOUT_SECONDS", env, 120)?,
-        name: or(get("DOCS_NAME", env)?, "docs"),
-        language: get("DOCS_LANGUAGE", env)?,
-        site_url: get("DOCS_SITE_URL", env)?,
+        name,
         git_username: or(get("DOCS_GIT_USERNAME", env)?, "git"),
         git_token: get("DOCS_GIT_TOKEN", env)?,
         git_ssh_key_file: get("DOCS_GIT_SSH_KEY_FILE", env)?,

@@ -250,6 +250,28 @@ Why these values:
   portal. It would send clients to a login page, and MCP clients need
   docs-mcp's own `401`, which tells them where to sign in.
 
+**More than one repo**, such as pipeline templates next to the handbook:
+replace the `DOCS_REPO_URL`, `DOCS_REF`, `DOCS_DIR`, `DOCS_LANGUAGE` and
+`DOCS_SITE_URL` lines with one `DOCS_SOURCES`, described in the README's
+[Several sources](../README.md#several-sources):
+
+```yaml
+          - name: DOCS_SOURCES
+            value: |
+              - name: handbook
+                description: The dev handbook. Rules and guidance for Rust, Python and our workflow.
+                repo: https://dev.azure.com/<ORG>/<PROJECT>/_git/dev-handbook
+                dir: src/content/docs
+                language: Norwegian Nynorsk
+              - name: ci-templates
+                description: Azure DevOps pipeline templates. Use them when writing azure-pipelines.yml.
+                repo: https://dev.azure.com/<ORG>/<PROJECT>/_git/ci-templates
+                include: ["**/*.yml", "**/*.yaml", "**/*.md"]
+```
+
+The Azure DevOps account from step 1 then needs read access to every listed
+repo, and still nothing else.
+
 **Without sign-in**, with a shared token instead: drop the four `MCP_OAUTH_*`
 and `MCP_PUBLIC_URL` lines, store a long random token in Key Vault, and pass it
 as `MCP_AUTH_TOKEN` the same way as the git token.

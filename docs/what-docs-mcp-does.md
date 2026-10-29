@@ -17,6 +17,11 @@ what it never does, without the technical details. New to MCP? Read
   internal network, like any other [remote MCP server](what-is-mcp.md#local-and-remote-servers),
   and calls its tools.
 
+It can serve more than the handbook. A repo of pipeline templates, or the
+template new Python projects start from, can be **sources** too, each with a
+description that tells the model when to use it. Files that are not Markdown,
+such as YAML or `pyproject.toml`, come back exactly as written.
+
 It runs once, centrally. You do not install anything. You add its address to
 your assistant, and either sign in with your work account or add a shared
 token, depending on how it is set up.

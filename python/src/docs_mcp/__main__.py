@@ -15,12 +15,15 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     config = load_or_exit()
     app, _ = build_app(config)
-    source = redact(config.repo_url) if config.repo_url else str(config.local_path)
+    if config.multi:
+        served = f"{len(config.sources)} sources ({', '.join(s.name for s in config.sources)})"
+    else:
+        only = config.sources[0]
+        served = f"{redact(only.repo_url) if only.repo_url else only.local_path} (dir {only.docs_dir})"
     logging.getLogger("docs_mcp").info(
-        "serving %s from %s (dir %s) on %s:%d, allowed hosts: %s, auth: %s",
+        "serving %s from %s on %s:%d, allowed hosts: %s, auth: %s",
         config.name,
-        source,
-        config.docs_dir,
+        served,
         config.host,
         config.port,
         ",".join(config.allowed_hosts) if config.allowed_hosts is not None else "*",

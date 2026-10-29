@@ -16,7 +16,8 @@ For background, read [What is MCP?](what-is-mcp.md) and
 container images, and the example deployments in `deploy/`. The review found
 one serious problem, which is fixed (see [F1](#findings)). Updated the same day
 for what followed from it: Entra ID sign-in ([E1](#e1-tool-calls),
-[E8](#e8-the-identity-provider)), and TLS in the example deployment.
+[E8](#e8-the-identity-provider)), TLS in the example deployment, and serving
+several sources ([E4](#e4-handbook-content)).
 
 ## Summary
 
@@ -31,10 +32,11 @@ for what followed from it: Entra ID sign-in ([E1](#e1-tool-calls),
 - **With Entra ID sign-in, you sign in as yourself.** docs-mcp checks the token
   Entra ID gave your assistant. It never sees your password, and keeps nothing
   about you.
-- **The risk is the content.** Your model reads the handbook text that docs-mcp
-  returns. Anyone who can change the handbook can try to steer your assistant
-  through it. Review on the handbook repo and your assistant's permission
-  prompts are what stop that (see [E4](#e4-handbook-content)).
+- **The risk is the content.** Your model reads the text that docs-mcp returns.
+  Anyone who can change a served repo, the handbook or another source such as
+  pipeline templates, can try to steer your assistant through it. Review on
+  those repos and your assistant's permission prompts are what stop that (see
+  [E4](#e4-handbook-content)).
 - **The handbook text goes to your model provider**, like everything else in
   your conversation. Do not put secrets in the handbook.
 
@@ -177,7 +179,28 @@ slow down an index build. That was not measured.
 
 **A very large repo.** The clone is shallow and single-branch, and the
 Kubernetes example caps the cache at 512 MB and memory at 256 MB. A repo that
-does not fit fails the sync or restarts the container. Low.
+does not fit fails the sync or restarts the container. Files over 1 MB are
+skipped. Low.
+
+**Several sources.** With `DOCS_SOURCES` ([SPEC.md §7](../SPEC.md#7-several-sources)),
+every served repo is this entry point, not only the handbook. Template and
+code repos often have looser review than the handbook, and whoever merges
+there can now steer every user's assistant. They also hold files nobody
+thought of as content:
+
+- Files that usually hold secrets (`.env`, `*.pem`, `*.key`, `*.p12`, `*.pfx`)
+  are never served, whatever the globs say. That is a safety net, not a
+  guarantee: anything else committed to a source reaches every user, and their
+  model providers.
+- Binary files and files over 1 MB are skipped.
+- Files that are not Markdown are served as written, without parsing, so they
+  add no parser to attack.
+- The list of sources comes only from the operator's configuration, never from
+  a repo, so a pull request cannot expose another repo the git account can
+  read.
+
+Tested in `conformance/test_sources.py`. Medium, like the handbook itself: keep
+review required on every source.
 
 ### E1: Tool calls
 
@@ -325,7 +348,7 @@ change to the code, the docs or a deployment.
 | **F4** | docs-mcp speaks plain HTTP, and the example ingress added no TLS. Tokens and queries crossed the network readable | Medium | **Mostly fixed.** The example ingress terminates TLS, the README requires it, and sign-in will not start without `https://` URLs. A shared-token deployment can still skip it |
 | **F5** | The README's `--scope project` advice would have committed the MCP token to the repo in `.mcp.json` | Medium | **Fixed** in the README |
 | **F6** | Over SSH without a `known_hosts` file, any new container trusts the first host key it sees | Low | Open. Require `DOCS_GIT_KNOWN_HOSTS_FILE` for SSH in the deployment docs |
-| **F7** | Git tokens on Azure DevOps, and Forgejo user tokens, reach every repo their account can read | Medium | Operator guidance: create the token from an account that can read only the handbook, or use a per-repo deploy key |
+| **F7** | Git tokens on Azure DevOps, and Forgejo user tokens, reach every repo their account can read | Medium | Operator guidance: create the token from an account that can read only the served repos, or use a per-repo deploy key |
 | **F8** | `/readyz` needs no token and shows git's error text. The example ingress exposed it | Low | **Fixed** in the example. The ingress forwards only `/mcp`, `/refresh` and the OAuth metadata |
 | **F9** | One shared token for every user and for the webhook. No revoking it for one person, no record of who asked | Low | **Fixed** with [Entra ID sign-in](sso-entra.md), and `MCP_REFRESH_TOKEN` for the webhook. Still true in shared-token mode: rotate the token when someone leaves or it leaks |
 | **F10** | Base images pinned by tag. git in the image needs security updates | Low | Open. Pin digests, rebuild and scan regularly |
@@ -375,7 +398,7 @@ This model changes, and needs a new review, when docs-mcp:
 - [ ] The git token is read-only, from an account that can read only the
       handbook. Or a per-repo deploy key over SSH.
 - [ ] With SSH, `DOCS_GIT_KNOWN_HOSTS_FILE` is set.
-- [ ] The served branch requires review before merge.
+- [ ] The served branch of every source requires review before merge.
 - [ ] The ingress forwards only `/mcp`, `/refresh` and the OAuth metadata.
 - [ ] A network policy limits egress to DNS, the git host and, with sign-in,
       the identity provider.
@@ -422,5 +445,10 @@ This model changes, and needs a new review, when docs-mcp:
     scopes, key rotation, the refetch limit and configuration errors. Both
     container images also fetched Entra ID's real signing keys over TLS, and
     refused a forged token with `bad signature`.
+  - **Several sources**, added after the review: `conformance/test_sources.py`
+    serves a handbook, a ci-templates repo and a project template from
+    one server. It covers skipped secret, binary and large files, file pages,
+    lookups across sources, a failing source, per-source refresh, and
+    configuration errors.
 - Not covered: git itself, the MCP SDKs beyond how docs-mcp uses them, the
   platform, the assistant apps and the model providers.

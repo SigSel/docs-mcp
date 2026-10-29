@@ -10,7 +10,7 @@ mod source;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use source::{Syncer, redact};
+use source::{Library, redact};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -30,21 +30,27 @@ async fn main() -> anyhow::Result<()> {
             std::process::exit(2);
         }
     };
-    let syncer = Arc::new(Syncer::new((*config).clone()));
+    let library = Arc::new(Library::new((*config).clone()));
     let listener = tokio::net::TcpListener::bind((config.host.as_str(), config.port)).await?;
-    let source = match &config.repo_url {
-        Some(url) => redact(url),
-        None => config
-            .local_path
-            .as_ref()
-            .map(|p| p.display().to_string())
-            .unwrap_or_default(),
+    let served = if config.multi {
+        let names: Vec<&str> = config.sources.iter().map(|s| s.name.as_str()).collect();
+        format!("{} sources ({})", names.len(), names.join(", "))
+    } else {
+        let only = &config.sources[0];
+        let source = match &only.repo_url {
+            Some(url) => redact(url),
+            None => only
+                .local_path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default(),
+        };
+        format!("{source} (dir {})", only.docs_dir)
     };
     tracing::info!(
-        "serving {} from {} (dir {}) on {}:{}, allowed hosts: {}, auth: {}",
+        "serving {} from {} on {}:{}, allowed hosts: {}, auth: {}",
         config.name,
-        source,
-        config.docs_dir,
+        served,
         config.host,
         config.port,
         config
@@ -60,8 +66,8 @@ async fn main() -> anyhow::Result<()> {
     for warning in server::startup_warnings(&config) {
         tracing::warn!("{warning}");
     }
-    tokio::spawn(syncer.clone().run_forever());
-    axum::serve(listener, server::app(config, syncer))
+    tokio::spawn(library.clone().run_forever());
+    axum::serve(listener, server::app(config, library))
         .with_graceful_shutdown(shutdown())
         .await?;
     Ok(())
