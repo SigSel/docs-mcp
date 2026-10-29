@@ -167,7 +167,10 @@ DOCS_DIR=src/content/docs
 ```
 
 Authentication is the same for every host: a read-only token, sent as HTTP Basic
-auth. It is scoped to the repo's host and is never written to disk or the URL.
+auth. It goes only to the repo's host and is never written to disk or the URL.
+Redirects are not followed, because git would send the token along. If the repo
+moves, the sync fails with git's `301` or `302` error until `DOCS_REPO_URL`
+points at the new address.
 
 | Host | `DOCS_GIT_TOKEN` | `DOCS_GIT_USERNAME` |
 |---|---|---|
@@ -256,11 +259,11 @@ run (full table, method and machine in
 
 | | Rust | Python | TypeScript |
 |---|---|---|---|
-| Image size | 200 MB | 275 MB | 363 MB |
-| Start to ready | 0.5 s | 3.1 s | 0.9 s |
-| Memory, idle / after load | 10 / 11 MB | 67 / 67 MB | 55 / 115 MB |
-| search_docs, median | 4 ms | 11 ms | 10 ms |
-| Source (non-blank lines) | 1783 | 960 | 1044 |
+| Image size | 200 MB | 276 MB | 364 MB |
+| Start to ready | 0.6 s | 3.0 s | 0.9 s |
+| Memory, idle / after load | 10 / 12 MB | 62 / 63 MB | 54 / 115 MB |
+| search_docs, median | 4 ms | 10 ms | 9 ms |
+| Source (non-blank lines) | 1824 | 987 | 1085 |
 | SDK | rmcp 3.5 + axum | mcp 2.3 (`MCPServer`) + Starlette | @modelcontextprotocol/server 2.3 |
 
 Most of every image is `git` and its dependencies. Choose the language your
@@ -289,7 +292,7 @@ justfile           build, test, lint, run, compare, eval, image, measure
 ## Testing
 
 ```sh
-just test            # 137 checks × 3 implementations
+just test            # 138 checks × 3 implementations
 just compare         # every page, section and 180+ searches, diffed across all three
 just eval            # search quality for Nynorsk, Bokmål and English questions
 just lint            # clippy pedantic, ruff, tsc

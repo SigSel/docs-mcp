@@ -34,7 +34,8 @@ fn shell_quote(s: &str) -> String {
 }
 
 pub fn git_env(config: &Config) -> Vec<(String, String)> {
-    let mut env = vec![("GIT_TERMINAL_PROMPT".to_string(), "0".to_string())];
+    // git sends the token header after a redirect too, to wherever it points.
+    let mut git_config = vec![("http.followRedirects".to_string(), "false".to_string())];
     let url = config.repo_url.as_deref().unwrap_or("");
     if let (Some(token), Some((scheme, rest))) = (&config.git_token, url.split_once("://")) {
         let scheme = scheme.to_lowercase();
@@ -43,16 +44,19 @@ pub fn git_env(config: &Config) -> Vec<(String, String)> {
             let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
             let basic = base64::engine::general_purpose::STANDARD
                 .encode(format!("{}:{token}", config.git_username));
-            env.push(("GIT_CONFIG_COUNT".into(), "1".into()));
-            env.push((
-                "GIT_CONFIG_KEY_0".into(),
+            git_config.push((
                 format!("http.{scheme}://{host}/.extraHeader"),
-            ));
-            env.push((
-                "GIT_CONFIG_VALUE_0".into(),
                 format!("Authorization: Basic {basic}"),
             ));
         }
+    }
+    let mut env = vec![
+        ("GIT_TERMINAL_PROMPT".to_string(), "0".to_string()),
+        ("GIT_CONFIG_COUNT".to_string(), git_config.len().to_string()),
+    ];
+    for (i, (key, value)) in git_config.into_iter().enumerate() {
+        env.push((format!("GIT_CONFIG_KEY_{i}"), key));
+        env.push((format!("GIT_CONFIG_VALUE_{i}"), value));
     }
     if let Some(key) = &config.git_ssh_key_file {
         let host_check = match &config.git_known_hosts_file {

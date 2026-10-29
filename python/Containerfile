@@ -15,11 +15,13 @@ FROM docker.io/library/python:3.12-slim-trixie
 # git does the syncing; openssh-client for SSH remotes. ssh refuses to run for a
 # UID without a passwd entry, hence the useradd.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git openssh-client ca-certificates \
+ && apt-get install -y --no-install-recommends git openssh-client ca-certificates tini \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --uid 10001 --home-dir /tmp --no-create-home --shell /usr/sbin/nologin docs
 COPY --from=builder /app/.venv /app/.venv
 ENV PATH=/app/.venv/bin:$PATH HOME=/tmp DOCS_CACHE_DIR=/tmp/docs-mcp PYTHONUNBUFFERED=1
 USER 10001
 EXPOSE 8080
-ENTRYPOINT ["docs-mcp"]
+# tini reaps the git processes a timeout kills (SPEC.md §3.1); nothing else in
+# the container would. -s keeps that working when tini is not PID 1 (--init).
+ENTRYPOINT ["/usr/bin/tini", "-s", "--", "docs-mcp"]

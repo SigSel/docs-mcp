@@ -129,6 +129,25 @@ async def test_token_refused(impl: str, repo: Path, tmp_path: Path, token: str |
         host.close()
 
 
+async def test_redirect_refused(impl: str, repo: Path, tmp_path: Path) -> None:
+    """A redirect is not followed: git would send the token to wherever it points."""
+    elsewhere = GitHost(repo.parent)  # asks for no token, so git carries on and sends it unasked
+    host = GitHost(repo.parent)
+    host.redirect_to = elsewhere.url
+    env = {"DOCS_REPO_URL": f"{host.url}/handbook", "DOCS_GIT_TOKEN": GIT_TOKEN}
+    s = start(impl, tmp_path, env, wait_for="/healthz")
+    try:
+        status = s.wait_for_error()
+        assert elsewhere.auth_seen == []
+        assert status["ready"] is False
+        assert status["last_error"].startswith("git clone failed: ")
+        assert "302" in status["last_error"]
+    finally:
+        stop_server(s)
+        host.close()
+        elsewhere.close()
+
+
 # --- A key over SSH -----------------------------------------------------------------------------------------------
 
 

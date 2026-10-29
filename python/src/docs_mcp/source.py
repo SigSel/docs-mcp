@@ -31,16 +31,23 @@ def redact(url: str) -> str:
 
 
 def git_env(config: Config) -> dict[str, str]:
-    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    # git sends the token header after a redirect too, to wherever it points.
+    env = {
+        **os.environ,
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "http.followRedirects",
+        "GIT_CONFIG_VALUE_0": "false",
+    }
     url = config.repo_url or ""
     parts = urlsplit(url)
     if config.git_token and parts.scheme in ("http", "https"):
         origin = f"{parts.scheme}://{parts.netloc.rsplit('@', 1)[-1]}/"
         basic = base64.b64encode(f"{config.git_username}:{config.git_token}".encode()).decode()
         env |= {
-            "GIT_CONFIG_COUNT": "1",
-            "GIT_CONFIG_KEY_0": f"http.{origin}.extraHeader",
-            "GIT_CONFIG_VALUE_0": f"Authorization: Basic {basic}",
+            "GIT_CONFIG_COUNT": "2",
+            "GIT_CONFIG_KEY_1": f"http.{origin}.extraHeader",
+            "GIT_CONFIG_VALUE_1": f"Authorization: Basic {basic}",
         }
     if config.git_ssh_key_file:
         ssh = f"ssh -i {shlex.quote(config.git_ssh_key_file)} -o IdentitiesOnly=yes"

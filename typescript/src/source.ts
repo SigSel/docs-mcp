@@ -18,13 +18,20 @@ export function redact(url: string): string {
 const shellQuote = (s: string): string => `'${s.replaceAll("'", `'\\''`)}'`;
 
 export function gitEnv(config: Config): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
+  // git sends the token header after a redirect too, to wherever it points.
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'http.followRedirects',
+    GIT_CONFIG_VALUE_0: 'false',
+  };
   const match = /^(https?):\/\/(?:[^/@]*@)?([^/]+)/i.exec(config.repoUrl ?? '');
   if (config.gitToken && match) {
     const basic = Buffer.from(`${config.gitUsername}:${config.gitToken}`).toString('base64');
-    env.GIT_CONFIG_COUNT = '1';
-    env.GIT_CONFIG_KEY_0 = `http.${match[1]!.toLowerCase()}://${match[2]}/.extraHeader`;
-    env.GIT_CONFIG_VALUE_0 = `Authorization: Basic ${basic}`;
+    env.GIT_CONFIG_COUNT = '2';
+    env.GIT_CONFIG_KEY_1 = `http.${match[1]!.toLowerCase()}://${match[2]}/.extraHeader`;
+    env.GIT_CONFIG_VALUE_1 = `Authorization: Basic ${basic}`;
   }
   if (config.gitSshKeyFile) {
     let ssh = `ssh -i ${shellQuote(config.gitSshKeyFile)} -o IdentitiesOnly=yes`;

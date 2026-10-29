@@ -93,10 +93,26 @@ direction, not precision.
 
 **Results.**
 
-Measured 2026-10-15 on an 11th Gen Intel Core i7-1185G7 (8 threads), 15 GB
-RAM, Fedora 42 (Linux 6.19), podman 5.8.2. The code was the language changes on
-top of commit 9934999. The docs were the same handbook (55 pages). Each
-implementation got 432 searches and 3 reads of the largest page (30 kB).
+Measured 2026-10-29 on an 11th Gen Intel Core i7-1185G7 (8 threads), 15 GB
+RAM, Fedora 44 (Linux 7.2), podman 5.8.9. The code was commit 5707ba0 plus
+`tini` in the images and git no longer following redirects. The docs were the
+same handbook (55 pages). Each implementation got 432 searches and 3 reads of
+the largest page (30 kB).
+
+| | Rust | Python | TypeScript |
+|---|---|---|---|
+| Image size | 200 MB | 276 MB | 364 MB |
+| `podman run` to ready | 0.61 s | 3.00 s | 0.86 s |
+| Memory, idle | 10 MB | 62 MB | 54 MB |
+| Memory, after the load | 12 MB | 63 MB | 115 MB |
+| search_docs, median | 4.1 ms | 10.2 ms | 9.2 ms |
+| search_docs, 95th percentile | 5.6 ms | 18.9 ms | 12.7 ms |
+| read_doc (largest page), median | 3.3 ms | 5.3 ms | 6.7 ms |
+
+Latency is measured at the client, so it includes HTTP and JSON-RPC overhead.
+
+Earlier run, 2026-10-15, same machine on Fedora 42 (Linux 6.19), podman 5.8.2.
+The code was the language changes on top of commit 9934999, before `tini`:
 
 | | Rust | Python | TypeScript |
 |---|---|---|---|
@@ -108,9 +124,7 @@ implementation got 432 searches and 3 reads of the largest page (30 kB).
 | search_docs, 95th percentile | 5.9 ms | 19.5 ms | 13.2 ms |
 | read_doc (largest page), median | 3.2 ms | 5.4 ms | 7.1 ms |
 
-Latency is measured at the client, so it includes HTTP and JSON-RPC overhead.
-
-Earlier run, at commit 9934999 (before the language changes), measured by hand
+Earliest run, at commit 9934999 (before the language changes), measured by hand
 with the same method minus latency:
 
 | | Rust | Python | TypeScript |

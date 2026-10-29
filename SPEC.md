@@ -92,10 +92,15 @@ add.
   `git reset --hard FETCH_HEAD`. The index is rebuilt only when `git rev-parse HEAD` changed.
 - **Environment** for every git process: the inherited environment plus
   - `GIT_TERMINAL_PROMPT=0`.
-  - With a token: `GIT_CONFIG_COUNT=1`,
-    `GIT_CONFIG_KEY_0=http.<scheme>://<host[:port]>/.extraHeader`,
-    `GIT_CONFIG_VALUE_0=Authorization: Basic <base64(username:token)>`. The header is
-    scoped to the repo's origin and never appears in argv, the URL or `.git/config`.
+  - `GIT_CONFIG_COUNT=1`, `GIT_CONFIG_KEY_0=http.followRedirects`,
+    `GIT_CONFIG_VALUE_0=false`. git never follows a redirect. When git follows
+    one, it sends the token header to wherever the redirect points. A repo that
+    has moved fails the sync with git's error, which names the status (`301`,
+    `302`). Point `DOCS_REPO_URL` at the new address.
+  - With a token: `GIT_CONFIG_COUNT=2`,
+    `GIT_CONFIG_KEY_1=http.<scheme>://<host[:port]>/.extraHeader`,
+    `GIT_CONFIG_VALUE_1=Authorization: Basic <base64(username:token)>`. The header
+    goes only to the repo's own host, and never appears in argv, the URL or `.git/config`.
   - With an SSH key: `GIT_SSH_COMMAND=ssh -i <key> -o IdentitiesOnly=yes`
     plus either `-o UserKnownHostsFile=<file> -o StrictHostKeyChecking=yes` or
     `-o StrictHostKeyChecking=accept-new`.
