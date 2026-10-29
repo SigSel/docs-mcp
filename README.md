@@ -191,6 +191,11 @@ every secret variable has a `_FILE` twin.
 
 Without a webhook, it pulls every `DOCS_REFRESH_SECONDS` (default 300).
 
+With more than one replica, the webhook reaches only one of them. The others
+keep serving the old docs until their own next pull, so two questions in a row
+can get different answers. The Kubernetes base runs two replicas and therefore
+pulls every 60 seconds. A pull that finds nothing new costs one small request.
+
 A git command that hangs, for example because the host stopped answering, is
 killed after `DOCS_GIT_TIMEOUT_SECONDS` (default 120). The docs from the last
 good pull stay in service, and `last_error` in `/readyz` says what happened.

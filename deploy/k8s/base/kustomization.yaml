@@ -13,6 +13,7 @@ configMapGenerator:
   - name: docs-mcp
     literals:
       - DOCS_DIR=.
-      - DOCS_REFRESH_SECONDS=300
+      # A push webhook reaches only one replica; the others catch up on their next pull.
+      - DOCS_REFRESH_SECONDS=60
       - DOCS_NAME=docs
       - MCP_PORT=8080
