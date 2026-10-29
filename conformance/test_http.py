@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import socket
 import time
@@ -90,6 +91,19 @@ def test_403_names_the_setting(server: Server) -> None:
 
 def test_no_default_warnings_when_configured(server: Server) -> None:
     assert "is not set" not in server.logs()
+
+
+def search(size: int) -> bytes:
+    """A search_docs call of about `size` bytes."""
+    params = {"name": "search_docs", "arguments": {"query": "ab " * (size // 3)}}
+    return json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params}).encode()
+
+
+def test_body_limit(server: Server) -> None:
+    """4 MB, set by the MCP SDKs: tested here, so an SDK update cannot lift it unnoticed."""
+    headers = {**MCP_HEADERS, **auth()}
+    assert server.http("POST", "/mcp", content=search(3_000_000), headers=headers).status_code == 200
+    assert server.http("POST", "/mcp", content=search(5_000_000), headers=headers).status_code == 413
 
 
 @pytest.fixture(scope="module")

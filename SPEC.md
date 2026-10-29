@@ -99,6 +99,8 @@ token. The `403` body names `MCP_ALLOWED_HOSTS`, and the first refusal of each
 host name (up to 100) is logged with that name, so an operator can see what to
 add.
 
+**Request size.** A request body over 4 MB gets `413`.
+
 **Visible defaults.** At startup, each of these is logged as a warning:
 
 - `MCP_ALLOWED_HOSTS is not set: only requests addressed to localhost are
