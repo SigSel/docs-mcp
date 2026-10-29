@@ -29,6 +29,17 @@ pub fn redact(url: &str) -> String {
     url.to_string()
 }
 
+/// `base/dir`, which may be reached through a link but must stay inside `base` (SPEC.md §4.1).
+fn docs_root(base: &Path, dir: &str) -> anyhow::Result<PathBuf> {
+    let root = base.join(dir);
+    if let (Ok(resolved), Ok(base)) = (root.canonicalize(), base.canonicalize())
+        && !resolved.starts_with(&base)
+    {
+        anyhow::bail!("docs directory is outside the source: {dir}");
+    }
+    Ok(root)
+}
+
 fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
@@ -186,18 +197,16 @@ impl Syncer {
 
     async fn sync_once(&self) -> anyhow::Result<()> {
         let c = &self.config;
-        let (commit, root) = match &c.repo_url {
-            Some(_) => (Some(self.pull().await?), self.repo.join(&c.docs_dir)),
-            None => (
-                None,
-                c.local_path.clone().unwrap_or_default().join(&c.docs_dir),
-            ),
+        let (commit, base) = match &c.repo_url {
+            Some(_) => (Some(self.pull().await?), self.repo.clone()),
+            None => (None, c.local_path.clone().unwrap_or_default()),
         };
         let changed = {
             let s = self.state.read().unwrap();
             commit.is_none() || commit != s.commit || s.index.is_none()
         };
         if changed {
+            let root = docs_root(&base, &c.docs_dir)?;
             let (include, exclude, ignore, name, site) = (
                 c.include.clone(),
                 c.exclude.clone(),

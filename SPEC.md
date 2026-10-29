@@ -142,6 +142,13 @@ Every refresh re-reads the directory and rebuilds the index. `commit` is `null`.
 
 - The root is `<repo or local path>/<DOCS_DIR>`.
 - The walk skips directories named `node_modules` or starting with `.`.
+- **Links are never followed.** The walk skips symbolic links, to files and to
+  directories alike, so every page is a regular file inside the root. A link
+  committed to the repo could otherwise point at a file outside it, such as
+  `/proc/self/environ` or a mounted secret, and serve it to every client.
+- The root itself may be reached through a link, but it must resolve to a
+  directory inside the repo (or the local path). Otherwise the sync fails with
+  `docs directory is outside the source: <DOCS_DIR>`.
 - A file is a page when its root-relative path (with `/` separators) matches an
   include glob and no exclude glob.
 - Glob syntax:

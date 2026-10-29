@@ -31,10 +31,15 @@ def discover(root: Path, include: list[str], exclude: list[str]) -> list[str]:
     inc = [glob_to_regex(g) for g in include]
     exc = [glob_to_regex(g) for g in exclude]
     found: list[str] = []
+    # os.walk does not descend into linked directories. Linked files are skipped below: a link committed to the repo
+    # could point at a secret outside it (SPEC.md §4.1).
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if not d.startswith(".") and d != "node_modules"]
         for name in filenames:
-            rel = (Path(dirpath) / name).relative_to(root).as_posix()
+            path = Path(dirpath) / name
+            if path.is_symlink() or not path.is_file():
+                continue
+            rel = path.relative_to(root).as_posix()
             if any(r.fullmatch(rel) for r in inc) and not any(r.fullmatch(rel) for r in exc):
                 found.append(rel)
     return sorted(found)

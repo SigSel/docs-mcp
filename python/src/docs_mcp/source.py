@@ -30,6 +30,14 @@ def redact(url: str) -> str:
     return url
 
 
+def docs_root(base: Path, docs_dir: str) -> Path:
+    """`base/docs_dir`, which may be reached through a link but must stay inside `base` (SPEC.md §4.1)."""
+    root = base / docs_dir
+    if root.exists() and not root.resolve().is_relative_to(base.resolve()):
+        raise RuntimeError(f"docs directory is outside the source: {docs_dir}")
+    return root
+
+
 def git_env(config: Config) -> dict[str, str]:
     # git sends the token header after a redirect too, to wherever it points.
     env = {
@@ -106,12 +114,13 @@ class Syncer:
                 if self.config.repo_url:
                     commit = await self._pull()
                     changed = commit != self.commit or self.index is None
-                    root = self._repo / self.config.docs_dir
+                    base = self._repo
                 else:
                     commit, changed = None, True
-                    root = (self.config.local_path or Path()) / self.config.docs_dir
+                    base = self.config.local_path or Path()
                 if changed:
                     c = self.config
+                    root = docs_root(base, c.docs_dir)
                     index = await asyncio.to_thread(
                         DocIndex.build, root, c.include, c.exclude, c.ignore_fields, c.name, c.site_url
                     )

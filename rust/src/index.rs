@@ -69,12 +69,14 @@ pub fn discover(
             } else {
                 format!("{rel}/{name}")
             };
+            // Does not follow links, so links to files and to directories are both skipped: one committed to the
+            // repo could point at a secret outside it (SPEC.md §4.1).
             let file_type = entry.file_type()?;
             if file_type.is_dir() {
                 if !name.starts_with('.') && name != "node_modules" {
                     stack.push((entry.path(), rel_path));
                 }
-            } else if (file_type.is_file() || (file_type.is_symlink() && entry.path().is_file()))
+            } else if file_type.is_file()
                 && inc.iter().any(|r| r.is_match(&rel_path))
                 && !exc.iter().any(|r| r.is_match(&rel_path))
             {
