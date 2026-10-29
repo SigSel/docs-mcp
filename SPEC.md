@@ -35,7 +35,7 @@ reads the value from that file instead, trimmed, for secrets mounted as files
 | `DOCS_GIT_SSH_KEY_FILE` | | Private key for SSH auth |
 | `DOCS_GIT_KNOWN_HOSTS_FILE` | | `known_hosts` for SSH. Unset means `StrictHostKeyChecking=accept-new` |
 | `DOCS_CACHE_DIR` | `<system temp>/docs-mcp` | Where the clone lives. Wiped at startup |
-| `MCP_HOST` | `0.0.0.0` | Listen address |
+| `MCP_HOST` | `127.0.0.1` | Listen address. The container images set `0.0.0.0`. Only this machine by default, because the host check (§2) is no access control: without auth, anyone who can reach the port can read |
 | `MCP_PORT` | `8080` | Listen port |
 | `MCP_AUTH_TOKEN` | | Shared-token auth: `/mcp` requires `Authorization: Bearer <token>` (§2.1, `_FILE` supported) |
 | `MCP_OAUTH_ISSUER` | | OAuth auth: the issuer of the access tokens clients send, for example `https://login.microsoftonline.com/<tenant-id>/v2.0` (§2.2) |
@@ -90,6 +90,9 @@ request gets `403`. It protects against DNS rebinding. It applies to `/mcp`,
 `/refresh` and the OAuth metadata. The SDKs' own host checks are turned off so
 both behave the same. Health endpoints skip it, because Kubernetes probes use
 the pod IP.
+
+It is no access control: any client can name an allowed host. That is why
+`MCP_HOST` defaults to this machine only (§1).
 
 The host check runs before auth, so a bad host gets `403` even with a valid
 token. The `403` body names `MCP_ALLOWED_HOSTS`, and the first refusal of each

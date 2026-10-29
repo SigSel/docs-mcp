@@ -375,7 +375,9 @@ pub fn load(env: &Env) -> Result<Config, ConfigError> {
         git_known_hosts_file: get("DOCS_GIT_KNOWN_HOSTS_FILE", env)?,
         cache_dir: get("DOCS_CACHE_DIR", env)?
             .map_or_else(|| std::env::temp_dir().join("docs-mcp"), PathBuf::from),
-        host: or(get("MCP_HOST", env)?, "0.0.0.0"),
+        // Only this machine by default: the host check is no access control, and without a token anyone who can
+        // reach the port can read. The images set 0.0.0.0 (SPEC.md §1).
+        host: or(get("MCP_HOST", env)?, "127.0.0.1"),
         port: number("MCP_PORT", env, 8080)?,
         auth_token,
         oauth_issuer,

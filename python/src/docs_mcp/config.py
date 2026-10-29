@@ -264,7 +264,9 @@ def load(env: dict[str, str] | None = None) -> Config:
         git_ssh_key_file=_get("DOCS_GIT_SSH_KEY_FILE", env),
         git_known_hosts_file=_get("DOCS_GIT_KNOWN_HOSTS_FILE", env),
         cache_dir=Path(_get("DOCS_CACHE_DIR", env) or Path(tempfile.gettempdir()) / "docs-mcp"),
-        host=_get("MCP_HOST", env) or "0.0.0.0",
+        # Only this machine by default: the host check is no access control, and without a token anyone who can reach
+        # the port can read. The images set 0.0.0.0 (SPEC.md §1).
+        host=_get("MCP_HOST", env) or "127.0.0.1",
         port=_int("MCP_PORT", env, 8080),
         auth_token=auth_token,
         oauth_issuer=oauth_issuer,

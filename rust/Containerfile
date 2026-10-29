@@ -14,7 +14,9 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --uid 10001 --home-dir /tmp --no-create-home --shell /usr/sbin/nologin docs
 COPY --from=builder /src/target/release/docs-mcp /usr/local/bin/docs-mcp
-ENV HOME=/tmp DOCS_CACHE_DIR=/tmp/docs-mcp
+# Every interface: the container's own network is the boundary. Publish the port
+# on 127.0.0.1, or put auth in front, to keep it from the rest of the network.
+ENV HOME=/tmp DOCS_CACHE_DIR=/tmp/docs-mcp MCP_HOST=0.0.0.0
 USER 10001
 EXPOSE 8080
 # tini reaps the git processes a timeout kills (SPEC.md §3.1); nothing else in

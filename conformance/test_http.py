@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import re
+import socket
 import time
 from collections.abc import Iterator
 
+import httpx2
 import pytest
 
 from conftest import FIXTURE_DOCS, TOKEN, Server, start_server, stop_server
@@ -92,9 +94,9 @@ def test_no_default_warnings_when_configured(server: Server) -> None:
 
 @pytest.fixture(scope="module")
 def defaults(impl: str, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Server]:
-    """A server left at the defaults: no token, no allowed hosts (empty counts as unset)."""
+    """A server left at the defaults: no token, no allowed hosts, no listen address (empty counts as unset)."""
     tmp = tmp_path_factory.mktemp(f"{impl}-defaults")
-    env = {"DOCS_LOCAL_PATH": str(FIXTURE_DOCS), "MCP_AUTH_TOKEN": "", "MCP_ALLOWED_HOSTS": ""}
+    env = {"DOCS_LOCAL_PATH": str(FIXTURE_DOCS), "MCP_AUTH_TOKEN": "", "MCP_ALLOWED_HOSTS": "", "MCP_HOST": ""}
     s = start_server(impl, env, tmp)
     yield s
     stop_server(s)
@@ -116,6 +118,27 @@ def test_defaults_are_announced(defaults: Server) -> None:
 def test_defaults_serve_localhost_without_token(defaults: Server) -> None:
     r = defaults.http("POST", "/mcp", json=INIT, headers=MCP_HEADERS)
     assert r.status_code == 200
+
+
+def network_address() -> str | None:
+    """This machine's address on its network, the one another machine would connect to, if it has one."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        try:
+            s.connect(("192.0.2.1", 9))  # a documentation address: connecting a UDP socket sends nothing
+        except OSError:
+            return None
+        address = s.getsockname()[0]
+    return None if address.startswith("127.") else address
+
+
+def test_defaults_listen_on_this_machine_only(defaults: Server) -> None:
+    """The host check is no access control: a request can name localhost from anywhere (SPEC.md §1)."""
+    port = defaults.base.rsplit(":", 1)[1]
+    wait_for_log(defaults, f"on 127.0.0.1:{port}")
+    if (address := network_address()) is None:
+        pytest.skip("this machine has no network address to try")
+    with pytest.raises(httpx2.ConnectError):
+        httpx2.post(f"http://{address}:{port}/mcp", json=INIT, headers={**MCP_HEADERS, "Host": "localhost"}, timeout=5)
 
 
 def test_refused_host_logged_once(defaults: Server) -> None:

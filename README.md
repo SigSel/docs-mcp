@@ -137,7 +137,7 @@ from `/mcp`. Both give the same answers, byte for byte (`just compare`); what
 differs is speed and memory, which `podman stats docs-mcp-try` shows live.
 
 `just run rust …` (or `python`) serves on the same address without a container,
-with the toolchain instead. The compose file (it needs `podman-compose`) runs
+with the toolchain instead, also reachable only from this machine. The compose file (it needs `podman-compose`) runs
 both images side by side:
 
 ```sh
