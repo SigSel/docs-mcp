@@ -28,6 +28,12 @@ configMapGenerator:
       # Every name clients use to reach the service: the Service's DNS names and
       # the ingress host. Requests with any other Host header are refused.
       - MCP_ALLOWED_HOSTS=docs-mcp,docs-mcp.docs-mcp,docs-mcp.docs-mcp.svc,docs-mcp.docs-mcp.svc.cluster.local,docs-mcp.example.internal
+      # Sign-in with Entra ID instead of MCP_AUTH_TOKEN (docs/sso-entra.md).
+      # Needs the ingress, for TLS, and MCP_REFRESH_TOKEN in secrets.env.
+      # - MCP_PUBLIC_URL=https://docs-mcp.example.internal/mcp
+      # - MCP_OAUTH_ISSUER=https://login.microsoftonline.com/TENANT-ID/v2.0
+      # - MCP_OAUTH_AUDIENCE=APPLICATION-CLIENT-ID
+      # - MCP_OAUTH_SCOPES=https://docs-mcp.example.internal/mcp/docs.read
 secretGenerator:
   - name: docs-mcp
     envs: [secrets.env]

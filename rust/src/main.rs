@@ -3,6 +3,7 @@
 mod config;
 mod content;
 mod index;
+mod oauth;
 mod server;
 mod source;
 
@@ -50,10 +51,10 @@ async fn main() -> anyhow::Result<()> {
             .allowed_hosts
             .as_ref()
             .map_or("*".to_string(), |h| h.join(",")),
-        if config.auth_token.is_some() {
-            "bearer token"
-        } else {
-            "none"
+        match (&config.oauth_issuer, &config.auth_token) {
+            (Some(issuer), _) => format!("oauth ({issuer})"),
+            (None, Some(_)) => "bearer token".into(),
+            (None, None) => "none".into(),
         },
     );
     for warning in server::startup_warnings(&config) {

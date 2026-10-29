@@ -31,6 +31,11 @@ pub struct Config {
     pub host: String,
     pub port: u16,
     pub auth_token: Option<String>,
+    pub oauth_issuer: Option<String>,
+    pub oauth_audience: Option<String>,
+    pub oauth_scopes: Vec<String>,
+    pub public_url: Option<String>,
+    pub refresh_token: Option<String>,
     /// `None` means any host.
     pub allowed_hosts: Option<Vec<String>>,
     /// `MCP_ALLOWED_HOSTS` was not set.
@@ -90,6 +95,70 @@ fn number<T: std::str::FromStr>(name: &str, env: &Env, default: T) -> Result<T, 
     }
 }
 
+const LOCAL_HOSTS: [&str; 3] = ["localhost", "127.0.0.1", "[::1]"];
+
+/// (scheme, authority, rest) of an absolute URL, as written.
+pub fn split_url(url: &str) -> (&str, &str, &str) {
+    let Some((scheme, after)) = url.split_once("://") else {
+        return ("", "", url);
+    };
+    let cut = after.find(['/', '?', '#']).unwrap_or(after.len());
+    (scheme, &after[..cut], &after[cut..])
+}
+
+/// `https://` with a host, or `http://` to this machine (SPEC.md §1).
+pub fn https_or_local(url: &str) -> bool {
+    let (scheme, authority, _) = split_url(url);
+    let hostport = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    let host = if hostport.starts_with('[') {
+        hostport.find(']').map_or("", |end| &hostport[..=end])
+    } else {
+        hostport.split(':').next().unwrap_or("")
+    };
+    let scheme = scheme.to_lowercase();
+    !host.is_empty()
+        && (scheme == "https"
+            || (scheme == "http" && LOCAL_HOSTS.contains(&host.to_lowercase().as_str())))
+}
+
+type Auth = (Option<String>, Option<String>, Option<String>);
+
+/// `MCP_AUTH_TOKEN`, `MCP_OAUTH_ISSUER` and `MCP_PUBLIC_URL`, checked against each other (SPEC.md §1).
+fn auth(env: &Env) -> Result<Auth, ConfigError> {
+    let token = get("MCP_AUTH_TOKEN", env)?;
+    let issuer = get("MCP_OAUTH_ISSUER", env)?;
+    let public = get("MCP_PUBLIC_URL", env)?;
+    if token.is_some() && issuer.is_some() {
+        return Err(ConfigError(
+            "set at most one of MCP_AUTH_TOKEN and MCP_OAUTH_ISSUER: a shared token would let \
+             anyone who has it past the login"
+                .into(),
+        ));
+    }
+    if issuer.is_some() && public.is_none() {
+        return Err(ConfigError(
+            "MCP_OAUTH_ISSUER needs MCP_PUBLIC_URL, the /mcp URL clients use".into(),
+        ));
+    }
+    for (name, url) in [("MCP_OAUTH_ISSUER", &issuer), ("MCP_PUBLIC_URL", &public)] {
+        if let Some(url) = url
+            && !https_or_local(url)
+        {
+            return Err(ConfigError(format!(
+                "{name} must be an https:// URL with a host (http:// only for localhost), got '{url}'"
+            )));
+        }
+    }
+    if let Some(url) = &public
+        && url.contains(['?', '#'])
+    {
+        return Err(ConfigError(format!(
+            "MCP_PUBLIC_URL must not have a query or a fragment, got '{url}'"
+        )));
+    }
+    Ok((token, issuer, public))
+}
+
 pub fn load(env: &Env) -> Result<Config, ConfigError> {
     let repo_url = get("DOCS_REPO_URL", env)?;
     let local_path = get("DOCS_LOCAL_PATH", env)?;
@@ -98,6 +167,7 @@ pub fn load(env: &Env) -> Result<Config, ConfigError> {
             "set exactly one of DOCS_REPO_URL and DOCS_LOCAL_PATH".into(),
         ));
     }
+    let (auth_token, oauth_issuer, public_url) = auth(env)?;
     let allowed_raw = get("MCP_ALLOWED_HOSTS", env)?;
     let allowed_hosts_default = allowed_raw.is_none();
     let allowed = list(Some(
@@ -130,7 +200,12 @@ pub fn load(env: &Env) -> Result<Config, ConfigError> {
             .map_or_else(|| std::env::temp_dir().join("docs-mcp"), PathBuf::from),
         host: or(get("MCP_HOST", env)?, "0.0.0.0"),
         port: number("MCP_PORT", env, 8080)?,
-        auth_token: get("MCP_AUTH_TOKEN", env)?,
+        auth_token,
+        oauth_issuer,
+        oauth_audience: get("MCP_OAUTH_AUDIENCE", env)?.or_else(|| public_url.clone()),
+        oauth_scopes: list(get("MCP_OAUTH_SCOPES", env)?),
+        public_url,
+        refresh_token: get("MCP_REFRESH_TOKEN", env)?,
         allowed_hosts: if allowed.iter().any(|h| h == "*") {
             None
         } else {

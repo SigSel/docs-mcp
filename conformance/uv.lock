@@ -209,12 +209,14 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "mcp" },
+    { name = "pyjwt", extra = ["crypto"] },
     { name = "pytest" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "mcp", specifier = "==2.3.0" },
+    { name = "pyjwt", extras = ["crypto"], specifier = "==2.15.1" },
     { name = "pytest", specifier = "==9.2.0" },
 ]
 

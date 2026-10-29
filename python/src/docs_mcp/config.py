@@ -41,6 +41,11 @@ class Config:
     host: str
     port: int
     auth_token: str | None
+    oauth_issuer: str | None
+    oauth_audience: str | None
+    oauth_scopes: list[str]
+    public_url: str | None
+    refresh_token: str | None
     allowed_hosts: list[str] | None  # None means any host
     allowed_hosts_default: bool  # MCP_ALLOWED_HOSTS was not set
 
@@ -75,12 +80,53 @@ def _int(name: str, env: dict[str, str], default: int) -> int:
     return value
 
 
+LOCAL_HOSTS = ("localhost", "127.0.0.1", "[::1]")
+
+
+def split_url(url: str) -> tuple[str, str, str]:
+    """(scheme, authority, rest) of an absolute URL, as written."""
+    scheme, sep, after = url.partition("://")
+    if not sep:
+        return "", "", url
+    cut = min((i for i in (after.find(c) for c in "/?#") if i >= 0), default=len(after))
+    return scheme, after[:cut], after[cut:]
+
+
+def https_or_local(url: str) -> bool:
+    """`https://` with a host, or `http://` to this machine (SPEC.md §1)."""
+    scheme, authority, _ = split_url(url)
+    hostport = authority.rsplit("@", 1)[-1]
+    host = hostport[: hostport.find("]") + 1] if hostport.startswith("[") else hostport.split(":", 1)[0]
+    if not host:
+        return False
+    return scheme.lower() == "https" or (scheme.lower() == "http" and host.lower() in LOCAL_HOSTS)
+
+
+def _auth(env: dict[str, str]) -> tuple[str | None, str | None, str | None]:
+    """MCP_AUTH_TOKEN, MCP_OAUTH_ISSUER and MCP_PUBLIC_URL, checked against each other (SPEC.md §1)."""
+    token, issuer, public = (_get(n, env) for n in ("MCP_AUTH_TOKEN", "MCP_OAUTH_ISSUER", "MCP_PUBLIC_URL"))
+    if token and issuer:
+        raise ConfigError(
+            "set at most one of MCP_AUTH_TOKEN and MCP_OAUTH_ISSUER: a shared token would let anyone who has it "
+            "past the login"
+        )
+    if issuer and not public:
+        raise ConfigError("MCP_OAUTH_ISSUER needs MCP_PUBLIC_URL, the /mcp URL clients use")
+    for name, url in (("MCP_OAUTH_ISSUER", issuer), ("MCP_PUBLIC_URL", public)):
+        if url and not https_or_local(url):
+            raise ConfigError(f"{name} must be an https:// URL with a host (http:// only for localhost), got {url!r}")
+    if public and ("?" in public or "#" in public):
+        raise ConfigError(f"MCP_PUBLIC_URL must not have a query or a fragment, got {public!r}")
+    return token, issuer, public
+
+
 def load(env: dict[str, str] | None = None) -> Config:
     env = dict(os.environ) if env is None else env
     repo_url = _get("DOCS_REPO_URL", env)
     local_path = _get("DOCS_LOCAL_PATH", env)
     if bool(repo_url) == bool(local_path):
         raise ConfigError("set exactly one of DOCS_REPO_URL and DOCS_LOCAL_PATH")
+    auth_token, oauth_issuer, public_url = _auth(env)
     allowed_raw = _get("MCP_ALLOWED_HOSTS", env)
     allowed = _list(allowed_raw or "localhost,127.0.0.1,::1")
     return Config(
@@ -103,7 +149,12 @@ def load(env: dict[str, str] | None = None) -> Config:
         cache_dir=Path(_get("DOCS_CACHE_DIR", env) or Path(tempfile.gettempdir()) / "docs-mcp"),
         host=_get("MCP_HOST", env) or "0.0.0.0",
         port=_int("MCP_PORT", env, 8080),
-        auth_token=_get("MCP_AUTH_TOKEN", env),
+        auth_token=auth_token,
+        oauth_issuer=oauth_issuer,
+        oauth_audience=_get("MCP_OAUTH_AUDIENCE", env) or public_url,
+        oauth_scopes=_list(_get("MCP_OAUTH_SCOPES", env)),
+        public_url=public_url,
+        refresh_token=_get("MCP_REFRESH_TOKEN", env),
         allowed_hosts=None if "*" in allowed else [h.lower().strip("[]") for h in allowed],
         allowed_hosts_default=allowed_raw is None,
     )

@@ -116,7 +116,7 @@ def start_server(
     cmd = COMMANDS[impl]
     if not (Path(cmd[-1]).exists() or shutil.which(cmd[0])):
         pytest.skip(f"{impl} is not built: {cmd[-1]} missing")
-    port = free_port()
+    port = int(env.get("MCP_PORT") or free_port())  # a test that needs the URL in advance picks the port
     full_env = {
         "PATH": os.environ["PATH"],
         "HOME": os.environ.get("HOME", "/tmp"),

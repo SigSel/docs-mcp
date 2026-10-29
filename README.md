@@ -129,6 +129,9 @@ cd deploy && podman compose --profile rust up   # → http://localhost:8081/mcp
 
 ## Connecting clients
 
+With [Entra ID sign-in](docs/sso-entra.md), clients need no token: they find
+the sign-in themselves, and the guide covers each client. With a shared token:
+
 **Claude Code**, with the token if the server has one:
 
 ```sh
@@ -212,10 +215,22 @@ at startup when either is still at its default:
 | `MCP_ALLOWED_HOSTS` | `localhost` only: a request addressed to any other host name gets `403` | Every name clients use: the ingress host, and in Kubernetes the Service names |
 | `MCP_AUTH_TOKEN` | Off: anyone who can reach the server can use it | A long random string. Clients send it as `Authorization: Bearer …` |
 
+Or, instead of `MCP_AUTH_TOKEN`, let users **sign in with Entra ID**: each user
+signs in as themselves, and access is managed in Entra ID. See
+[Sign-in with Entra ID](docs/sso-entra.md).
+
+**Put TLS in front of it.** docs-mcp speaks plain HTTP, so tokens and questions
+cross the network readable unless something encrypts them: the ingress, Azure
+Container Apps, App Runner, or a reverse proxy on a VM. The Kubernetes example's
+ingress does, and forwards only the paths clients need. Entra ID sign-in will
+not start without `https://` URLs.
+
 Also set:
 
 - `DOCS_LANGUAGE`, see [Languages](#languages).
 - A **read-only** git token.
+- `MCP_REFRESH_TOKEN` for the push webhook, so the webhook does not need the
+  token users have.
 
 What a deployment left at the defaults logs:
 
@@ -284,6 +299,7 @@ rust/ python/      one implementation each, with a Containerfile
 conformance/       black-box pytest suite run against any implementation
   golden.json      exact expected outputs for fixtures/docs
   githost.py       a git host over HTTP for the auth and timeout tests
+  issuer.py        an OAuth issuer, shaped like Entra ID, for the sign-in tests
   compare.py       diff all implementations against a real docs tree
   search_eval.*    search quality across nn/nb/en questions (just eval)
   measure.py       image size, memory, startup, latency (just measure)
@@ -296,7 +312,7 @@ justfile           build, test, lint, run, compare, eval, image, measure
 ## Testing
 
 ```sh
-just test            # 154 checks × 2 implementations
+just test            # 195 checks × 2 implementations
 just compare         # every page, section and 180+ searches, diffed across both
 just eval            # search quality for Nynorsk, Bokmål and English questions
 just lint            # clippy pedantic, ruff

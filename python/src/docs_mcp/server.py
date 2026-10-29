@@ -18,12 +18,13 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import Field
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse, PlainTextResponse
+from starlette.responses import JSONResponse, PlainTextResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from . import __version__
 from .config import Config
 from .index import DocIndex, ToolFailure
+from .oauth import METADATA, Refused, TokenChecker, Unreachable, metadata, metadata_path, metadata_url
 from .source import Syncer
 
 log = logging.getLogger("docs_mcp")
@@ -142,6 +143,15 @@ def build_mcp(config: Config, syncer: Syncer) -> MCPServer:
         status = syncer.status()
         return JSONResponse(status, status_code=200 if status["ready"] else 503)
 
+    if config.oauth_issuer and config.public_url:
+        document = metadata(config)
+
+        async def protected_resource(_: Request) -> JSONResponse:
+            return JSONResponse(document)
+
+        for path in sorted({METADATA, metadata_path(config.public_url)}):
+            mcp.custom_route(path, methods=["GET"])(protected_resource)
+
     @mcp.custom_route("/refresh", methods=["POST"])
     async def refresh(_: Request) -> JSONResponse:
         ok = await syncer.sync()
@@ -151,34 +161,80 @@ def build_mcp(config: Config, syncer: Syncer) -> MCPServer:
 
 
 class Guard:
-    """Host check, then bearer auth, on /mcp and /refresh (SPEC.md §2)."""
+    """Host check, then auth, on /mcp, /refresh and the OAuth metadata (SPEC.md §2)."""
 
-    def __init__(self, app: ASGIApp, config: Config) -> None:
+    def __init__(self, app: ASGIApp, config: Config, checker: TokenChecker | None) -> None:
         self.app = app
         self.allowed = config.allowed_hosts
         self.token = config.auth_token.encode() if config.auth_token else None
+        refresh = config.refresh_token or config.auth_token
+        self.refresh = refresh.encode() if refresh else None
+        self.checker = checker
+        self.challenge = ""
+        if config.public_url:
+            self.challenge = f'Bearer resource_metadata="{metadata_url(config.public_url)}"'
+            if config.oauth_scopes:
+                self.challenge += f', scope="{" ".join(config.oauth_scopes)}"'
         self.refused: set[str] = set()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http" and (scope["path"].startswith("/mcp") or scope["path"] == "/refresh"):
+        path = scope["path"] if scope["type"] == "http" else ""
+        if path.startswith("/mcp") or path == "/refresh" or path.startswith(METADATA):
             headers = dict(scope["headers"])
-            host = _hostname(headers.get(b"host", b"").decode("latin-1"))
-            if self.allowed is not None and host not in self.allowed:
-                if host not in self.refused and len(self.refused) < 100:
-                    self.refused.add(host)
-                    log.warning("refused a request for host '%s': it is not in MCP_ALLOWED_HOSTS", host)
-                response = PlainTextResponse("Forbidden: host not allowed (see MCP_ALLOWED_HOSTS)\n", status_code=403)
+            response = self._host(headers) or (
+                self._refresh(headers)
+                if path == "/refresh"
+                else await self._mcp(headers)
+                if path.startswith("/mcp")
+                else None
+            )
+            if response is not None:
                 await response(scope, receive, send)
                 return
-            if self.token is not None:
-                given = headers.get(b"authorization", b"")
-                if not hmac.compare_digest(given, b"Bearer " + self.token):
-                    response = PlainTextResponse(
-                        "Unauthorized\n", status_code=401, headers={"WWW-Authenticate": "Bearer"}
-                    )
-                    await response(scope, receive, send)
-                    return
         await self.app(scope, receive, send)
+
+    def _host(self, headers: dict[bytes, bytes]) -> Response | None:
+        host = _hostname(headers.get(b"host", b"").decode("latin-1"))
+        if self.allowed is None or host in self.allowed:
+            return None
+        if host not in self.refused and len(self.refused) < 100:
+            self.refused.add(host)
+            log.warning("refused a request for host '%s': it is not in MCP_ALLOWED_HOSTS", host)
+        return PlainTextResponse("Forbidden: host not allowed (see MCP_ALLOWED_HOSTS)\n", status_code=403)
+
+    def _refresh(self, headers: dict[bytes, bytes]) -> Response | None:
+        if self.refresh is None:
+            if self.checker is None:
+                return None
+            return PlainTextResponse("Forbidden: /refresh is off (see MCP_REFRESH_TOKEN)\n", status_code=403)
+        return _bearer(headers, self.refresh)
+
+    async def _mcp(self, headers: dict[bytes, bytes]) -> Response | None:
+        if self.checker is None:
+            return _bearer(headers, self.token) if self.token is not None else None
+        scheme, _, token = headers.get(b"authorization", b"").decode("latin-1").partition(" ")
+        token = token.strip()
+        if scheme.lower() != "bearer" or not token:
+            return self._refuse(401, "Unauthorized\n", self.challenge)
+        try:
+            await self.checker.check(token)
+        except Refused as e:
+            body = "Unauthorized\n" if e.status == 401 else "Forbidden\n"
+            return self._refuse(e.status, body, f'{self.challenge}, error="{e.error}", error_description="{e.reason}"')
+        except Unreachable:
+            return PlainTextResponse("Service Unavailable: cannot reach the OAuth issuer\n", status_code=503)
+        return None
+
+    @staticmethod
+    def _refuse(status: int, body: str, challenge: str) -> Response:
+        return PlainTextResponse(body, status_code=status, headers={"WWW-Authenticate": challenge})
+
+
+def _bearer(headers: dict[bytes, bytes], secret: bytes) -> Response | None:
+    """None when the request carries `Bearer <secret>`, compared in constant time."""
+    if hmac.compare_digest(headers.get(b"authorization", b""), b"Bearer " + secret):
+        return None
+    return PlainTextResponse("Unauthorized\n", status_code=401, headers={"WWW-Authenticate": "Bearer"})
 
 
 def startup_warnings(config: Config) -> list[str]:
@@ -191,8 +247,10 @@ def startup_warnings(config: Config) -> list[str]:
         )
     elif config.allowed_hosts is None:
         warnings.append("MCP_ALLOWED_HOSTS is '*': the Host header is not checked.")
-    if not config.auth_token:
+    if not config.auth_token and not config.oauth_issuer:
         warnings.append("MCP_AUTH_TOKEN is not set: anyone who can reach this server can use it.")
+    if config.oauth_issuer and not config.refresh_token:
+        warnings.append("MCP_REFRESH_TOKEN is not set: /refresh is off.")
     return warnings
 
 
@@ -222,4 +280,5 @@ def build_app(config: Config) -> tuple[ASGIApp, Syncer]:
         task.cancel()
 
     app.router.lifespan_context = lifespan
-    return Guard(app, config), syncer
+    checker = TokenChecker(config) if config.oauth_issuer else None
+    return Guard(app, config, checker), syncer

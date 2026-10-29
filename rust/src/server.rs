@@ -1,12 +1,12 @@
 //! The MCP tools and the HTTP app around them (SPEC.md §2, §6).
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::sync::{Arc, Mutex};
 
 use axum::Router;
 use axum::body::Body;
 use axum::extract::{Request, State};
-use axum::http::{HeaderValue, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
@@ -22,6 +22,7 @@ use subtle::ConstantTimeEq;
 
 use crate::config::Config;
 use crate::index::{DocIndex, Filters, ToolFailure};
+use crate::oauth::{METADATA, Refusal, TokenChecker, metadata, metadata_path, metadata_url};
 use crate::source::Syncer;
 
 const INSTRUCTIONS: &str = "Documentation for {name}{written}. Use search_docs to find what is relevant to a \
@@ -240,8 +241,11 @@ pub fn startup_warnings(config: &Config) -> Vec<&'static str> {
     } else if config.allowed_hosts.is_none() {
         warnings.push("MCP_ALLOWED_HOSTS is '*': the Host header is not checked.");
     }
-    if config.auth_token.is_none() {
+    if config.auth_token.is_none() && config.oauth_issuer.is_none() {
         warnings.push("MCP_AUTH_TOKEN is not set: anyone who can reach this server can use it.");
+    }
+    if config.oauth_issuer.is_some() && config.refresh_token.is_none() {
+        warnings.push("MCP_REFRESH_TOKEN is not set: /refresh is off.");
     }
     warnings
 }
@@ -252,6 +256,9 @@ struct AppState {
     config: Arc<Config>,
     /// Host names already logged as refused, so a scanner cannot flood the log.
     refused: Arc<Mutex<HashSet<String>>>,
+    checker: Option<Arc<TokenChecker>>,
+    /// `WWW-Authenticate` for OAuth refusals, before any error.
+    challenge: String,
 }
 
 fn hostname(host: &str) -> String {
@@ -262,47 +269,136 @@ fn hostname(host: &str) -> String {
     h.split(':').next().unwrap_or("").to_string()
 }
 
-/// Host check, then bearer auth, on /mcp and /refresh (SPEC.md §2).
+/// Host check, then auth, on /mcp, /refresh and the OAuth metadata (SPEC.md §2).
 async fn guard(State(state): State<AppState>, request: Request, next: Next) -> Response {
     let path = request.uri().path();
-    if path.starts_with("/mcp") || path == "/refresh" {
+    if path.starts_with("/mcp") || path == "/refresh" || path.starts_with(METADATA) {
         let headers = request.headers();
-        if let Some(allowed) = &state.config.allowed_hosts {
-            let host = headers
-                .get(header::HOST)
-                .and_then(|h| h.to_str().ok())
-                .unwrap_or("");
-            let host = hostname(host);
-            if !allowed.contains(&host) {
-                let mut refused = state.refused.lock().unwrap();
-                if refused.len() < 100 && refused.insert(host.clone()) {
-                    tracing::warn!(
-                        "refused a request for host '{host}': it is not in MCP_ALLOWED_HOSTS"
-                    );
-                }
-                return (
-                    StatusCode::FORBIDDEN,
-                    "Forbidden: host not allowed (see MCP_ALLOWED_HOSTS)\n",
-                )
-                    .into_response();
-            }
+        if let Some(refused) = check_host(&state, headers) {
+            return refused;
         }
-        if let Some(token) = &state.config.auth_token {
-            let given = headers
-                .get(header::AUTHORIZATION)
-                .map_or(&b""[..], HeaderValue::as_bytes);
-            let expected = format!("Bearer {token}");
-            if !bool::from(given.ct_eq(expected.as_bytes())) {
-                return (
-                    StatusCode::UNAUTHORIZED,
-                    [(header::WWW_AUTHENTICATE, "Bearer")],
-                    "Unauthorized\n",
-                )
-                    .into_response();
-            }
+        let refused = if path == "/refresh" {
+            check_refresh(&state, headers)
+        } else if path.starts_with("/mcp") {
+            check_mcp(&state, headers).await
+        } else {
+            None
+        };
+        if let Some(refused) = refused {
+            return refused;
         }
     }
     next.run(request).await
+}
+
+fn check_host(state: &AppState, headers: &HeaderMap) -> Option<Response> {
+    let allowed = state.config.allowed_hosts.as_ref()?;
+    let host = hostname(
+        headers
+            .get(header::HOST)
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or(""),
+    );
+    if allowed.contains(&host) {
+        return None;
+    }
+    let mut refused = state.refused.lock().unwrap();
+    if refused.len() < 100 && refused.insert(host.clone()) {
+        tracing::warn!("refused a request for host '{host}': it is not in MCP_ALLOWED_HOSTS");
+    }
+    Some(
+        (
+            StatusCode::FORBIDDEN,
+            "Forbidden: host not allowed (see MCP_ALLOWED_HOSTS)\n",
+        )
+            .into_response(),
+    )
+}
+
+fn check_refresh(state: &AppState, headers: &HeaderMap) -> Option<Response> {
+    let config = &state.config;
+    match config.refresh_token.as_ref().or(config.auth_token.as_ref()) {
+        Some(secret) => bearer(headers, secret),
+        None if state.checker.is_some() => Some(
+            (
+                StatusCode::FORBIDDEN,
+                "Forbidden: /refresh is off (see MCP_REFRESH_TOKEN)\n",
+            )
+                .into_response(),
+        ),
+        None => None,
+    }
+}
+
+async fn check_mcp(state: &AppState, headers: &HeaderMap) -> Option<Response> {
+    let Some(checker) = &state.checker else {
+        return bearer(headers, state.config.auth_token.as_ref()?);
+    };
+    let given = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    let token = match given.split_once(' ') {
+        Some((scheme, token)) if scheme.eq_ignore_ascii_case("bearer") => token.trim(),
+        _ => "",
+    };
+    if token.is_empty() {
+        return Some(refuse(
+            StatusCode::UNAUTHORIZED,
+            "Unauthorized\n",
+            &state.challenge,
+        ));
+    }
+    match checker.check(token).await {
+        Ok(()) => None,
+        Err(Refusal::Invalid(reason)) => Some(refuse(
+            StatusCode::UNAUTHORIZED,
+            "Unauthorized\n",
+            &format!(
+                "{}, error=\"invalid_token\", error_description=\"{reason}\"",
+                state.challenge
+            ),
+        )),
+        Err(Refusal::MissingScope(scope)) => Some(refuse(
+            StatusCode::FORBIDDEN,
+            "Forbidden\n",
+            &format!(
+                "{}, error=\"insufficient_scope\", error_description=\"missing scope {scope}\"",
+                state.challenge
+            ),
+        )),
+        Err(Refusal::Unreachable) => Some(
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Service Unavailable: cannot reach the OAuth issuer\n",
+            )
+                .into_response(),
+        ),
+    }
+}
+
+fn refuse(status: StatusCode, body: &'static str, challenge: &str) -> Response {
+    let challenge = HeaderValue::from_str(challenge).unwrap_or(HeaderValue::from_static("Bearer"));
+    (status, [(header::WWW_AUTHENTICATE, challenge)], body).into_response()
+}
+
+/// `None` when the request carries `Bearer <secret>`, compared in constant time.
+fn bearer(headers: &HeaderMap, secret: &str) -> Option<Response> {
+    let given = headers
+        .get(header::AUTHORIZATION)
+        .map_or(&b""[..], HeaderValue::as_bytes);
+    let expected = format!("Bearer {secret}");
+    if bool::from(given.ct_eq(expected.as_bytes())) {
+        return None;
+    }
+    Some(
+        (
+            StatusCode::UNAUTHORIZED,
+            [(header::WWW_AUTHENTICATE, "Bearer")],
+            "Unauthorized\n",
+        )
+            .into_response(),
+    )
 }
 
 async fn healthz() -> Json<serde_json::Value> {
@@ -339,12 +435,41 @@ pub fn app(config: Arc<Config>, syncer: Arc<Syncer>) -> Router {
             .with_json_response(true)
             .disable_allowed_hosts(),
     );
+    let checker = config
+        .oauth_issuer
+        .as_ref()
+        .map(|_| Arc::new(TokenChecker::new(&config)));
+    let challenge = config
+        .public_url
+        .as_ref()
+        .map(|public| {
+            let scope = if config.oauth_scopes.is_empty() {
+                String::new()
+            } else {
+                format!(", scope=\"{}\"", config.oauth_scopes.join(" "))
+            };
+            format!(
+                "Bearer resource_metadata=\"{}\"{scope}",
+                metadata_url(public)
+            )
+        })
+        .unwrap_or_default();
+    let mut router = Router::new();
+    if let (Some(_), Some(public)) = (&checker, &config.public_url) {
+        let document = Json(metadata(&config));
+        for path in BTreeSet::from([METADATA.to_string(), metadata_path(public)]) {
+            let document = document.clone();
+            router = router.route(&path, get(move || async move { document }));
+        }
+    }
     let state = AppState {
         syncer,
         config,
         refused: Arc::default(),
+        checker,
+        challenge,
     };
-    Router::new()
+    router
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/refresh", post(refresh))

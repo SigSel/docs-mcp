@@ -36,20 +36,37 @@ reads the value from that file instead, trimmed, for secrets mounted as files
 | `DOCS_CACHE_DIR` | `<system temp>/docs-mcp` | Where the clone lives. Wiped at startup |
 | `MCP_HOST` | `0.0.0.0` | Listen address |
 | `MCP_PORT` | `8080` | Listen port |
-| `MCP_AUTH_TOKEN` | | When set, `/mcp` and `/refresh` require `Authorization: Bearer <token>` (`_FILE` supported) |
-| `MCP_ALLOWED_HOSTS` | `localhost,127.0.0.1,::1` | Hostnames accepted in the `Host` header on `/mcp` and `/refresh`. `*` accepts any |
+| `MCP_AUTH_TOKEN` | | Shared-token auth: `/mcp` requires `Authorization: Bearer <token>` (§2.1, `_FILE` supported) |
+| `MCP_OAUTH_ISSUER` | | OAuth auth: the issuer of the access tokens clients send, for example `https://login.microsoftonline.com/<tenant-id>/v2.0` (§2.2) |
+| `MCP_OAUTH_AUDIENCE` | `MCP_PUBLIC_URL` | The audience access tokens must carry. For Entra ID, the app registration's client ID |
+| `MCP_OAUTH_SCOPES` | | Comma-separated scopes access tokens must carry, and clients are told to ask for |
+| `MCP_PUBLIC_URL` | | The `/mcp` URL clients use, for example `https://docs-mcp.example.internal/mcp`. Required with OAuth |
+| `MCP_REFRESH_TOKEN` | | When set, `/refresh` requires `Authorization: Bearer <this>` instead of `MCP_AUTH_TOKEN` (§2.1, `_FILE` supported) |
+| `MCP_ALLOWED_HOSTS` | `localhost,127.0.0.1,::1` | Hostnames accepted in the `Host` header on `/mcp`, `/refresh` and the OAuth metadata. `*` accepts any |
 
 A missing or contradictory source configuration exits with status 2 and a
-message naming the variable.
+message naming the variable. So does each of these:
+
+- `MCP_AUTH_TOKEN` and `MCP_OAUTH_ISSUER` both set. A shared token would let
+  anyone who has it past the login.
+- `MCP_OAUTH_ISSUER` set without `MCP_PUBLIC_URL`.
+- `MCP_PUBLIC_URL` or `MCP_OAUTH_ISSUER` not an `https://` URL with a host.
+  `http://` is accepted only for the hosts `localhost`, `127.0.0.1` and `[::1]`,
+  for development.
+- `MCP_PUBLIC_URL` with a query or a fragment.
 
 ## 2. HTTP surface
+
+docs-mcp speaks plain HTTP. TLS belongs in front of it, in an ingress or the
+platform, which is why OAuth insists on `https://` URLs.
 
 | Endpoint | Auth | Host check | Behaviour |
 |---|---|---|---|
 | `/mcp` | yes | yes | MCP Streamable HTTP, stateless. Serves the 2026-07-28 revision and earlier revisions |
 | `GET /healthz` | no | no | Always `200 {"status":"ok"}` once the process listens. Liveness |
 | `GET /readyz` | no | no | `200` with the status object once an index is loaded, `503` with it before. Readiness |
-| `POST /refresh` | yes | yes | Runs a sync now and waits for it. `200` with the status object, or `500` with it if the sync failed. For webhooks |
+| `POST /refresh` | refresh | yes | Runs a sync now and waits for it. `200` with the status object, or `500` with it if the sync failed. For webhooks (§2.1) |
+| `GET /.well-known/oauth-protected-resource…` | no | yes | With OAuth only: the protected resource metadata (§2.2) |
 
 The status object:
 
@@ -60,15 +77,18 @@ The status object:
 `commit` is `null` for a local source. `synced_at` is the last successful sync,
 UTC, second precision, `Z` suffix.
 
-**Auth.** When `MCP_AUTH_TOKEN` is set, a request without a matching
-`Authorization: Bearer <token>` gets `401` with `WWW-Authenticate: Bearer`. The
-comparison is constant-time.
+**Auth.** `/mcp` has one of three modes:
+
+- **None**, when neither `MCP_AUTH_TOKEN` nor `MCP_OAUTH_ISSUER` is set.
+- **Shared token**, with `MCP_AUTH_TOKEN` (§2.1).
+- **OAuth**, with `MCP_OAUTH_ISSUER` (§2.2).
 
 **Host check.** The hostname part of the `Host` header (port stripped,
 case-insensitive, IPv6 brackets stripped) must be in `MCP_ALLOWED_HOSTS`, or the
-request gets `403`. It protects against DNS rebinding. The SDKs' own host checks
-are turned off so both behave the same. Health endpoints skip it, because
-Kubernetes probes use the pod IP.
+request gets `403`. It protects against DNS rebinding. It applies to `/mcp`,
+`/refresh` and the OAuth metadata. The SDKs' own host checks are turned off so
+both behave the same. Health endpoints skip it, because Kubernetes probes use
+the pod IP.
 
 The host check runs before auth, so a bad host gets `403` even with a valid
 token. The `403` body names `MCP_ALLOWED_HOSTS`, and the first refusal of each
@@ -81,6 +101,105 @@ add.
   accepted. Set it to the host names clients use.`
 - `MCP_ALLOWED_HOSTS is '*': the Host header is not checked.`
 - `MCP_AUTH_TOKEN is not set: anyone who can reach this server can use it.`
+  Only when `MCP_OAUTH_ISSUER` is not set either.
+- `MCP_REFRESH_TOKEN is not set: /refresh is off.` With OAuth only.
+
+### 2.1 Shared token
+
+With `MCP_AUTH_TOKEN` set, a request to `/mcp` without a matching
+`Authorization: Bearer <token>` gets `401` with `WWW-Authenticate: Bearer` and
+the body `Unauthorized`. Every token comparison is constant-time.
+
+`/refresh` is for webhooks, which cannot log in. It needs
+`Authorization: Bearer <MCP_REFRESH_TOKEN>`, or `MCP_AUTH_TOKEN` when
+`MCP_REFRESH_TOKEN` is not set, and refuses anything else the same way. With
+neither set, `/refresh` is open in auth mode none, and off with OAuth: `403`
+with a body that names `MCP_REFRESH_TOKEN`.
+
+### 2.2 OAuth
+
+With `MCP_OAUTH_ISSUER` set, docs-mcp is an OAuth resource server, as the MCP
+authorization specification describes. A client gets an access token from the
+issuer, through the user's browser, and sends it with every request to `/mcp`.
+docs-mcp checks the token and keeps nothing. Every valid token gets the same
+read-only access: who may get one is decided at the issuer.
+
+**Protected resource metadata** (RFC 9728) is served at
+`/.well-known/oauth-protected-resource` followed by the path of
+`MCP_PUBLIC_URL` without a trailing `/`, and at
+`/.well-known/oauth-protected-resource` itself. For
+`MCP_PUBLIC_URL=https://docs.example/mcp`, that is
+`/.well-known/oauth-protected-resource/mcp`:
+
+```json
+{"resource":"https://docs.example/mcp","authorization_servers":["https://login.microsoftonline.com/<tenant-id>/v2.0"],"scopes_supported":["api://docs-mcp/docs.read"],"bearer_methods_supported":["header"],"resource_name":"dev-handbook"}
+```
+
+`resource` is `MCP_PUBLIC_URL` and `authorization_servers` holds
+`MCP_OAUTH_ISSUER`, both exactly as configured. `scopes_supported` is left out
+when `MCP_OAUTH_SCOPES` is empty. `resource_name` is `DOCS_NAME`.
+
+**Refusals.** The metadata URL is the scheme and authority of `MCP_PUBLIC_URL`
+followed by the metadata path above. A refused request to `/mcp` gets:
+
+| Request | Status | Body |
+|---|---|---|
+| No `Authorization: Bearer` header | `401` | `Unauthorized` |
+| A token that fails a check below | `401` | `Unauthorized` |
+| A valid token without a required scope | `403` | `Forbidden` |
+
+with the header
+`WWW-Authenticate: Bearer resource_metadata="<url>"`, then
+`, scope="<MCP_OAUTH_SCOPES, space-separated>"` when scopes are set, then
+`, error="invalid_token", error_description="<reason>"` for a refused token or
+`, error="insufficient_scope", error_description="missing scope <scope>"` for a
+missing scope.
+
+**Token checks**, in this order. The first that fails gives the reason:
+
+1. The token has three parts separated by `.`, each base64url without padding.
+   The first two decode to JSON objects, and the first has a string `kid` and
+   a string `alg`. Otherwise: `malformed token`.
+2. `alg` is one of `RS256`, `RS384`, `RS512`, `PS256`, `PS384`, `PS512`,
+   `ES256` and `ES384`. Otherwise: `unsupported algorithm`. `none` and the HMAC
+   algorithms are never accepted.
+3. The issuer's key set has a key with that `kid` that fits `alg`: `kty` `RSA`
+   for `RS*` and `PS*`, `EC` with `crv` `P-256` for `ES256` and `P-384` for
+   `ES384`, its `alg` (if any) equal to the token's, and its `use` (if any)
+   `sig`. Otherwise: `unknown signing key`.
+4. The signature verifies with that key. Otherwise: `bad signature`.
+5. `iss` equals `MCP_OAUTH_ISSUER`. Otherwise: `wrong issuer`.
+6. `aud`, a string or a list of strings, holds `MCP_OAUTH_AUDIENCE`.
+   Otherwise: `wrong audience`.
+7. `exp` is a number, and now is before `exp` plus 60 seconds. Otherwise:
+   `expired`.
+8. `nbf`, if present, is a number no later than now plus 60 seconds.
+   Otherwise: `not yet valid`.
+9. Every scope in `MCP_OAUTH_SCOPES` is among the token's scopes. Otherwise
+   `403`, naming the first scope missing. The token's scopes are its `scp`
+   claim (Entra ID), or else its `scope` claim: a space-separated string or a
+   list of strings. Two scopes match when the parts after their last `/` are
+   equal, because Entra ID puts `docs.read` in `scp` for the scope
+   `api://docs-mcp/docs.read`.
+
+**Signing keys.** docs-mcp fetches
+`<MCP_OAUTH_ISSUER>/.well-known/openid-configuration` (without doubling a
+trailing `/`), checks that its `issuer` equals `MCP_OAUTH_ISSUER`, and fetches
+the key set from its `jwks_uri`. It does so:
+
+- when a token first needs a key;
+- when the key set is more than an hour old, so a key the issuer withdraws
+  stops being trusted;
+- when a token names a `kid` the key set lacks. This reason fetches at most
+  once a minute, so tokens with made-up `kid`s cannot keep docs-mcp fetching.
+
+Fetches use the system's CA certificates, time out after 10 seconds, follow no
+redirects, and refuse responses over 1 MB. Like the issuer, `jwks_uri` must be
+`https://` unless its host is local. A failed fetch keeps the old key set, is
+logged, and is tried again 10 seconds later at the earliest, so an issuer that
+is down does not hold up every request. With no key set at all, the request
+gets `503` with the body
+`Service Unavailable: cannot reach the OAuth issuer`.
 
 ## 3. Source sync
 

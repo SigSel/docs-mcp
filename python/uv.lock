@@ -208,9 +208,12 @@ name = "docs-mcp"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "httpx2" },
     { name = "mcp" },
+    { name = "pyjwt", extra = ["crypto"] },
     { name = "pyyaml" },
     { name = "starlette" },
+    { name = "truststore" },
     { name = "uvicorn" },
 ]
 
@@ -222,9 +225,12 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx2", specifier = "==2.16.0" },
     { name = "mcp", specifier = "==2.3.0" },
+    { name = "pyjwt", extras = ["crypto"], specifier = "==2.15.1" },
     { name = "pyyaml", specifier = "==6.0.3" },
     { name = "starlette", specifier = "==1.10.0" },
+    { name = "truststore", specifier = "==0.10.5" },
     { name = "uvicorn", specifier = "==0.54.0" },
 ]
 

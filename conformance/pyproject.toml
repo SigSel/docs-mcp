@@ -5,6 +5,7 @@ description = "Black-box tests that every docs-mcp implementation must pass"
 requires-python = ">=3.12"
 dependencies = [
     "mcp==2.3.0",
+    "pyjwt[crypto]==2.15.1",
     "pytest==9.2.0",
 ]
 

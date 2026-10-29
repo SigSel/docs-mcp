@@ -24,7 +24,7 @@ def main() -> None:
         config.host,
         config.port,
         ",".join(config.allowed_hosts) if config.allowed_hosts is not None else "*",
-        "bearer token" if config.auth_token else "none",
+        f"oauth ({config.oauth_issuer})" if config.oauth_issuer else "bearer token" if config.auth_token else "none",
     )
     for warning in startup_warnings(config):
         logging.getLogger("docs_mcp").warning(warning)

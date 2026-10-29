@@ -1,15 +1,31 @@
-# Optional: expose docs-mcp on an internal host name. Add the host to
+# Expose docs-mcp on an internal host name, over TLS. docs-mcp speaks plain
+# HTTP; this is where the encryption happens. Add the host to
 # MCP_ALLOWED_HOSTS in kustomization.yaml.
+#
+# Only the paths clients need are forwarded. /healthz and /readyz stay inside
+# the cluster, for the probes.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: docs-mcp
+  # With cert-manager, name an issuer and the certificate is made for you:
+  # annotations:
+  #   cert-manager.io/cluster-issuer: internal-ca
 spec:
+  tls:
+    - hosts: [docs-mcp.example.internal]
+      secretName: docs-mcp-tls  # a certificate for the host
   rules:
     - host: docs-mcp.example.internal
       http:
         paths:
-          - path: /
+          - path: /mcp
+            pathType: Exact
+            backend: { service: { name: docs-mcp, port: { name: http } } }
+          - path: /refresh
+            pathType: Exact
+            backend: { service: { name: docs-mcp, port: { name: http } } }
+          # The OAuth metadata, when MCP_OAUTH_ISSUER is set.
+          - path: /.well-known/oauth-protected-resource
             pathType: Prefix
-            backend:
-              service: { name: docs-mcp, port: { name: http } }
+            backend: { service: { name: docs-mcp, port: { name: http } } }
