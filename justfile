@@ -26,6 +26,17 @@ lint:
     cd rust && cargo fmt --check && cargo clippy --release -- -D warnings
     cd python && uv run ruff check src && uv run ruff format --check src
 
+# Known vulnerabilities in the locked dependencies: RustSec, and PyPI's advisories
+audit:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    (cd rust && cargo deny check advisories)
+    for project in python conformance; do
+      echo "pip-audit: $project"
+      (cd $project && uv export --locked --no-dev --no-emit-project --format requirements-txt --quiet) \
+        | uvx --quiet pip-audit==2.10.1 --no-deps --disable-pip --requirement /dev/stdin
+    done
+
 # Diff all implementations against a real docs tree
 compare docs=(handbook / "src/content/docs"): build
     cd conformance && uv run python compare.py {{ absolute_path(docs) }}

@@ -1,0 +1,13 @@
+# `cargo deny check advisories`, which `just audit` runs. Each ignored advisory
+# says why it does not apply. Look again whenever jsonwebtoken is updated.
+[advisories]
+ignore = [
+    # The Marvin attack: timing leaks while decrypting or signing with an RSA
+    # private key. docs-mcp only verifies signatures, with the issuer's public
+    # keys. No fixed rsa release yet.
+    { id = "RUSTSEC-2023-0071", reason = "only RSA signature verification with public keys" },
+    # Timing leaks in arithmetic on secret integers. Here it only verifies
+    # ECDSA signatures, on public keys and public tokens. The fix is in
+    # crypto-bigint 0.7, which jsonwebtoken does not use yet.
+    { id = "RUSTSEC-2026-0387", reason = "only ECDSA signature verification on public data" },
+]
