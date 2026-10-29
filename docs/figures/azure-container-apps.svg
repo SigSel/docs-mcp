@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="436" viewBox="0 0 800 436" role="img" aria-labelledby="title desc">
+  <title id="title">docs-mcp on Azure Container Apps</title>
+  <desc id="desc">Users reach docs-mcp over HTTPS with a token from Entra ID. docs-mcp runs as a container app, pulls the handbook from Azure DevOps, and fetches Entra ID's signing keys. Its managed identity pulls the image from the registry and reads secrets from Key Vault. Logs go to Log Analytics.</desc>
+  <style>
+    text { font-family: Helvetica, Arial, sans-serif; font-size: 13px; fill: #1f2328; }
+    .b { font-weight: 700; }
+    .m { fill: #59636e; font-size: 12px; }
+    .c { text-anchor: middle; }
+    .zl { font-size: 12px; font-weight: 700; }
+    .flow { stroke: #59636e; stroke-width: 1.5; fill: none; }
+    .dash { stroke: #59636e; stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <rect width="800" height="436" rx="12" fill="#ffffff"/>
+
+  <!-- Entra ID -->
+  <rect x="300" y="14" width="190" height="56" rx="10" fill="#d8f3f5" stroke="#1b7c83" stroke-width="1.5"/>
+  <text x="395" y="37" class="b c">Entra ID</text>
+  <text x="395" y="56" class="m c">sign-in, signing keys</text>
+
+  <!-- Users -->
+  <rect x="16" y="168" width="128" height="84" rx="10" fill="#ddf4ff" stroke="#0969da" stroke-width="1.5"/>
+  <text x="80" y="198" class="b c">Your users</text>
+  <text x="80" y="218" class="m c">VS Code,</text>
+  <text x="80" y="234" class="m c">Copilot, …</text>
+
+  <!-- Resource group -->
+  <rect x="170" y="94" width="460" height="326" rx="12" fill="#f7fbff" stroke="#0078d4" stroke-width="1.4" stroke-dasharray="6 4"/>
+  <text x="182" y="112" class="zl" fill="#0078d4">Azure resource group</text>
+
+  <!-- Environment -->
+  <rect x="186" y="122" width="428" height="150" rx="10" fill="#f6fff8" stroke="#1a7f37" stroke-width="1.4" stroke-dasharray="6 4"/>
+  <text x="198" y="140" class="zl" fill="#1a7f37">Container Apps environment</text>
+  <rect x="300" y="152" width="190" height="104" rx="10" fill="#dafbe1" stroke="#1a7f37" stroke-width="1.6"/>
+  <text x="395" y="178" class="b c" font-size="15">docs-mcp</text>
+  <text x="395" y="197" class="m c">container app, 1–2 replicas</text>
+  <rect x="335" y="214" width="120" height="26" rx="13" fill="#ffffff" stroke="#1a7f37" stroke-width="1.1"/>
+  <text x="395" y="231" class="c" font-size="12">managed identity</text>
+
+  <!-- Bottom row -->
+  <rect x="196" y="320" width="124" height="70" rx="10" fill="#ffffff" stroke="#8c959f" stroke-width="1.3"/>
+  <text x="258" y="348" class="b c">Registry</text>
+  <text x="258" y="367" class="m c">the image</text>
+  <rect x="338" y="320" width="124" height="70" rx="10" fill="#ffffff" stroke="#8c959f" stroke-width="1.3"/>
+  <text x="400" y="348" class="b c">Key Vault</text>
+  <text x="400" y="367" class="m c">secrets, certificate</text>
+  <rect x="480" y="320" width="124" height="70" rx="10" fill="#ffffff" stroke="#8c959f" stroke-width="1.3"/>
+  <text x="542" y="348" class="b c">Log Analytics</text>
+  <text x="542" y="367" class="m c">logs, no questions</text>
+  <path d="M258,318 L330,260" class="flow" marker-end="url(#a)"/>
+  <text x="282" y="286" class="m" text-anchor="end">image</text>
+  <path d="M400,318 L400,260" class="flow" marker-end="url(#a)"/>
+  <text x="408" y="294" class="m">secrets</text>
+  <path d="M462,260 L536,318" class="flow" marker-end="url(#a)"/>
+  <text x="506" y="290" class="m">logs</text>
+
+  <!-- Users -> app -->
+  <path d="M146,206 L296,206" class="flow" marker-end="url(#a)"/>
+  <text x="226" y="198" class="m c">HTTPS</text>
+  <text x="240" y="224" class="m c">+ sign-in token</text>
+
+  <!-- Users <-> Entra -->
+  <path d="M120,166 L296,52" class="flow" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text x="160" y="128" class="m" text-anchor="end">sign in</text>
+
+  <!-- Entra -> app -->
+  <path d="M395,72 L395,150" class="flow" marker-end="url(#a)"/>
+  <text x="405" y="86" class="m">signing keys</text>
+
+  <!-- Azure DevOps -->
+  <rect x="656" y="160" width="128" height="92" rx="10" fill="#fff1e5" stroke="#bc4c00" stroke-width="1.5"/>
+  <text x="720" y="190" class="b c">Azure DevOps</text>
+  <text x="720" y="209" class="m c">the handbook</text>
+  <text x="720" y="225" class="m c">repo</text>
+  <path d="M654,186 L494,186" class="flow" marker-end="url(#a)"/>
+  <text x="574" y="178" class="m c">git pull, PAT</text>
+  <path d="M654,226 L494,226" class="dash" marker-end="url(#a)"/>
+  <text x="720" y="272" class="m c">webhook: public only</text>
+</svg>

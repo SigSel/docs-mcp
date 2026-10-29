@@ -87,7 +87,8 @@ reach docs-mcp.
 Leave `MCP_AUTH_TOKEN` unset: docs-mcp refuses to start with both, because a
 shared token would let anyone who has it past the sign-in. Both URLs must be
 `https://`, so TLS has to be in front of docs-mcp. The Kubernetes example's
-ingress does that, and its overlay has these settings, commented out.
+ingress does that, and its overlay has these settings, commented out. On Azure
+Container Apps, follow [Set up docs-mcp on Azure Container Apps](deploy-azure-container-apps.md).
 
 **Check it**, from a machine on the network:
 

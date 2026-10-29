@@ -267,7 +267,8 @@ filesystem except `/tmp`. Endpoints:
 |---|---|
 | Laptop, for development | `deploy/compose.yaml` (profiles `rust`, `python`, `git`) |
 | Kubernetes | `kubectl apply -k deploy/k8s/overlays/example`. Copy the overlay, then set image, repo, `MCP_ALLOWED_HOSTS` and `secrets.env` |
-| Azure Container Apps, AWS App Runner/ECS, a VM | Run the image with the env vars below. Ingress on port 8080, health check `/readyz` |
+| Azure Container Apps | Step by step, with sign-in and HTTPS: [Set up docs-mcp on Azure Container Apps](docs/deploy-azure-container-apps.md) |
+| AWS App Runner/ECS, a VM | Run the image with the env vars below. Ingress on port 8080, health check `/readyz` |
 
 ```sh
 podman run -d -p 8080:8080 --read-only --tmpfs /tmp \
@@ -302,7 +303,7 @@ you keep.
 ## Repository layout
 
 ```
-docs/              what MCP is, what docs-mcp does, Entra ID sign-in, the threat model
+docs/              what MCP is, what docs-mcp does, Entra ID sign-in, Azure, the threat model
   figures/         the diagrams, as SVG
 HOW-IT-WORKS.md    a question traced from user to answer, with real requests
 SPEC.md            the contract: config, HTTP, parsing, search, tool outputs
