@@ -1,0 +1,172 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="676" viewBox="0 0 960 676" role="img" aria-labelledby="title desc">
+  <title id="title">Inside docs-mcp</title>
+  <desc id="desc">Requests arrive on one HTTP listener. Health probes go straight to the status. Everything else passes the guard: a Host check, then the shared token, an OAuth access token checked against the identity provider's keys, or the refresh secret. /mcp runs five read-only tools against an immutable search index snapshot. Separately, one syncer per source runs git against its git host, the loader turns the clone into pages, and the index builder builds a new snapshot over all sources and swaps it in.</desc>
+  <style>
+    text { font-family: Helvetica, Arial, sans-serif; font-size: 12px; fill: #1f2328; }
+    .b { font-weight: 700; font-size: 13px; }
+    .m { fill: #59636e; font-size: 11.5px; }
+    .c { text-anchor: middle; }
+    .zl { font-size: 12px; font-weight: 700; }
+    .flow { stroke: #59636e; stroke-width: 1.5; fill: none; }
+    .req { fill: #dafbe1; stroke: #1a7f37; stroke-width: 1.3; }
+    .sync { fill: #fff1e5; stroke: #bc4c00; stroke-width: 1.3; }
+    .auth { fill: #ffebe9; stroke: #cf222e; stroke-width: 1.3; }
+    .key { fill: #d8f3f5; stroke: #1b7c83; stroke-width: 1.3; }
+    .plain { fill: #f6f8fa; stroke: #8c959f; stroke-width: 1.2; }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <rect width="960" height="676" rx="12" fill="#ffffff"/>
+
+  <!-- Inbound -->
+  <rect x="16" y="40" width="160" height="64" rx="8" fill="#ddf4ff" stroke="#0969da" stroke-width="1.3"/>
+  <text x="96" y="62" class="b c">Assistant apps</text>
+  <text x="96" y="79" class="m c">MCP clients</text>
+  <text x="96" y="95" class="m c">HTTPS, to the ingress</text>
+  <rect x="16" y="118" width="160" height="44" rx="8" class="sync"/>
+  <text x="96" y="137" class="b c">Push webhook</text>
+  <text x="96" y="153" class="m c">from a git host</text>
+  <rect x="16" y="176" width="160" height="44" rx="8" class="plain"/>
+  <text x="96" y="195" class="b c">Platform probes</text>
+  <text x="96" y="211" class="m c">Kubernetes, ACA</text>
+
+  <!-- Outbound -->
+  <rect x="796" y="112" width="148" height="84" rx="8" class="key"/>
+  <text x="870" y="135" class="b c">Identity provider</text>
+  <text x="870" y="152" class="m c">e.g. Entra ID</text>
+  <text x="870" y="168" class="m c">discovery and signing</text>
+  <text x="870" y="184" class="m c">keys, over HTTPS</text>
+  <rect x="796" y="552" width="148" height="76" rx="8" class="sync"/>
+  <text x="870" y="575" class="b c">Git hosts</text>
+  <text x="870" y="592" class="m c">one repo per source</text>
+  <text x="870" y="608" class="m c">HTTPS + token, or SSH</text>
+
+  <!-- Container -->
+  <text x="196" y="26" class="zl" fill="#1a7f37">docs-mcp container: one process, unprivileged, read-only filesystem except its cache</text>
+  <rect x="196" y="36" width="580" height="624" rx="12" fill="#fbfefc" stroke="#1a7f37" stroke-width="1.4" stroke-dasharray="6 4"/>
+
+  <!-- Inbound arrows, over the container -->
+  <path d="M176,66 L214,66" class="flow" marker-end="url(#a)"/>
+  <path d="M176,140 L214,78" class="flow" marker-end="url(#a)"/>
+  <path d="M176,198 L214,84" class="flow" marker-end="url(#a)"/>
+
+  <!-- Listener -->
+  <rect x="216" y="52" width="540" height="34" rx="8" class="plain"/>
+  <text x="486" y="68" class="b c">HTTP listener, port 8080</text>
+  <text x="486" y="82" class="m c">plain HTTP: TLS ends in front of it</text>
+  <path d="M261,86 L261,102" class="flow" marker-end="url(#a)"/>
+  <path d="M456,86 L456,102" class="flow" marker-end="url(#a)"/>
+
+  <!-- Health and status -->
+  <rect x="216" y="104" width="90" height="132" rx="8" class="plain"/>
+  <text x="261" y="128" class="b c">/healthz</text>
+  <text x="261" y="146" class="b c">/readyz</text>
+  <text x="261" y="172" class="m c">no guard,</text>
+  <text x="261" y="188" class="m c">for probes</text>
+  <path d="M261,236 L261,254" class="flow" marker-end="url(#a)"/>
+  <rect x="216" y="256" width="90" height="136" rx="8" class="plain"/>
+  <text x="261" y="280" class="b c">Status</text>
+  <text x="261" y="300" class="m c">per source:</text>
+  <text x="261" y="316" class="m c">commit,</text>
+  <text x="261" y="332" class="m c">last sync,</text>
+  <text x="261" y="348" class="m c">last error</text>
+
+  <!-- Guard -->
+  <rect x="322" y="104" width="268" height="60" rx="8" class="auth"/>
+  <text x="456" y="123" class="b c">Guard</text>
+  <text x="456" y="140" class="m c">1. Host header in the allow list</text>
+  <text x="456" y="156" class="m c">2. token, access token, or refresh secret</text>
+  <path d="M590,134 L614,134" class="flow" marker-end="url(#a)"/>
+  <path d="M390,164 L390,178" class="flow" marker-end="url(#a)"/>
+  <path d="M530,164 L530,178" class="flow" marker-end="url(#a)"/>
+
+  <!-- Endpoints -->
+  <rect x="322" y="180" width="136" height="56" rx="8" class="req"/>
+  <text x="390" y="200" class="b c">/mcp</text>
+  <text x="390" y="215" class="m c">MCP, JSON-RPC</text>
+  <text x="390" y="229" class="m c">stateless</text>
+  <rect x="470" y="180" width="120" height="25" rx="6" class="req"/>
+  <text x="530" y="197" class="c">/refresh: sync now</text>
+  <rect x="470" y="211" width="120" height="25" rx="6" class="req"/>
+  <text x="530" y="228" class="c">OAuth metadata</text>
+
+  <!-- Tools and index -->
+  <path d="M390,236 L390,254" class="flow" marker-end="url(#a)"/>
+  <rect x="322" y="256" width="268" height="60" rx="8" class="req"/>
+  <text x="456" y="276" class="b c">Five read-only tools</text>
+  <text x="456" y="292" class="m c">search_docs · read_doc · get_section</text>
+  <text x="456" y="307" class="m c">list_docs · docs_overview</text>
+  <path d="M456,316 L456,334" class="flow" marker-end="url(#a)"/>
+  <text x="464" y="329" class="m">read</text>
+  <rect x="322" y="336" width="268" height="56" rx="8" fill="#c8f0d2" stroke="#1a7f37" stroke-width="1.6"/>
+  <text x="456" y="358" class="b c">Search index: a snapshot</text>
+  <text x="456" y="375" class="m c">never changed; replaced in one step</text>
+
+  <!-- Token checker -->
+  <rect x="616" y="104" width="140" height="288" rx="8" class="key"/>
+  <text x="686" y="124" class="b c">Token checker</text>
+  <text x="686" y="140" class="m c">with OAuth only</text>
+  <text x="628" y="164" class="m">in order:</text>
+  <text x="628" y="181">alg allow list</text>
+  <text x="628" y="197">signature, by kid</text>
+  <text x="628" y="213">iss, aud</text>
+  <text x="628" y="229">exp, nbf: 60 s leeway</text>
+  <text x="628" y="245">scope</text>
+  <rect x="628" y="290" width="116" height="90" rx="6" fill="#ffffff" stroke="#1b7c83" stroke-width="1.1"/>
+  <text x="686" y="308" class="b c" font-size="12">Key cache</text>
+  <text x="686" y="326" class="m c">refetched at 1 h,</text>
+  <text x="686" y="342" class="m c">or for a new kid</text>
+  <text x="686" y="358" class="m c">at most once</text>
+  <text x="686" y="372" class="m c">a minute</text>
+  <path d="M756,150 L794,150" class="flow" marker-start="url(#a)" marker-end="url(#a)"/>
+
+  <!-- Refresh to syncer -->
+  <path d="M590,192 L606,192 L606,480 L614,480" class="flow" marker-end="url(#a)"/>
+
+  <!-- Sync -->
+  <rect x="216" y="440" width="90" height="196" rx="8" class="plain"/>
+  <text x="261" y="464" class="b c">Logs</text>
+  <text x="261" y="484" class="m c">to stdout:</text>
+  <text x="261" y="500" class="m c">startup,</text>
+  <text x="261" y="516" class="m c">syncs,</text>
+  <text x="261" y="532" class="m c">errors,</text>
+  <text x="261" y="548" class="m c">refusals.</text>
+  <text x="261" y="572" class="m c">Never tool</text>
+  <text x="261" y="588" class="m c">calls.</text>
+
+  <rect x="322" y="440" width="268" height="80" rx="8" class="sync"/>
+  <text x="456" y="462" class="b c">Index builder</text>
+  <text x="456" y="480" class="m c">every source's pages → tokens,</text>
+  <text x="456" y="496" class="m c">weighted fields, BM25 postings;</text>
+  <text x="456" y="512" class="m c">built off to the side</text>
+  <path d="M456,440 L456,394" class="flow" marker-end="url(#a)"/>
+  <text x="464" y="422" class="m">swap</text>
+
+  <rect x="322" y="548" width="268" height="88" rx="8" class="sync"/>
+  <text x="456" y="568" class="b c">Loader</text>
+  <text x="456" y="585" class="m c">walk + globs; skip links, secrets,</text>
+  <text x="456" y="600" class="m c">files over 1 MB, binary files</text>
+  <text x="456" y="615" class="m c">Markdown: frontmatter, MDX, sections</text>
+  <text x="456" y="630" class="m c">other files: as written</text>
+  <path d="M456,548 L456,522" class="flow" marker-end="url(#a)"/>
+  <text x="464" y="540" class="m">pages</text>
+
+  <rect x="616" y="440" width="140" height="80" rx="8" class="sync"/>
+  <text x="686" y="462" class="b c">Syncer</text>
+  <text x="686" y="478" class="m c">one per source:</text>
+  <text x="686" y="494" class="m c">timer, retry every 10 s,</text>
+  <text x="686" y="510" class="m c">one sync at a time</text>
+  <path d="M686,520 L686,546" class="flow" marker-end="url(#a)"/>
+
+  <rect x="616" y="548" width="140" height="88" rx="8" class="sync"/>
+  <text x="686" y="568" class="b c">git</text>
+  <text x="686" y="584" class="m c">clone --depth 1,</text>
+  <text x="686" y="599" class="m c">fetch + reset;</text>
+  <text x="686" y="614" class="m c">timeout, no redirects</text>
+  <text x="686" y="629" class="m c">cache/&lt;source&gt;/repo</text>
+  <path d="M616,592 L592,592" class="flow" marker-end="url(#a)"/>
+  <path d="M794,592 L758,592" class="flow" marker-end="url(#a)"/>
+</svg>

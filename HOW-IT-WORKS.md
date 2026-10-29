@@ -48,8 +48,8 @@ docs-mcp never contacts a client on its own. Four things make it act:
 | Trigger | What it does |
 |---|---|
 | **A request on `/mcp`** from an assistant | Answers it, then forgets it. Every request stands alone: no sessions, no memory of earlier calls. That is also why any number of replicas can run side by side. |
-| **The refresh timer** (`DOCS_REFRESH_SECONDS`, 300 by default) | `git fetch`. If there is a new commit, it re-reads every page and swaps in a new index. |
-| **`POST /refresh`**, typically a push webhook from Azure DevOps or Forgejo | The same as the timer, right away. |
+| **The refresh timer** (`DOCS_REFRESH_SECONDS`, 300 by default), one per source | `git fetch`. If there is a new commit, it re-reads that source and swaps in a new index. |
+| **`POST /refresh`**, typically a push webhook from Azure DevOps or Forgejo | The same as the timer, right away, for every source or for `?source=<name>`. |
 | **`GET /healthz`, `GET /readyz`** | "I am running" and "I have an index", so Kubernetes or a container platform knows when to send traffic. |
 
 Every `/mcp` and `/refresh` request goes through two checks before any MCP
@@ -57,8 +57,10 @@ handling:
 
 1. **The `Host` header must be in `MCP_ALLOWED_HOSTS`**, or the request gets
    `403`. This protects against DNS rebinding.
-2. **When `MCP_AUTH_TOKEN` is set, the request must carry
-   `Authorization: Bearer <token>`**, or it gets `401`.
+2. **Auth**, or the request gets `401`. `/mcp` needs `Authorization: Bearer`
+   with the shared token (`MCP_AUTH_TOKEN`) or, with [Entra ID
+   sign-in](docs/sso-entra.md), a valid access token. `/refresh` needs the
+   refresh secret (`MCP_REFRESH_TOKEN`).
 
 ## A conversation, step by step
 
@@ -210,25 +212,47 @@ instead, so the model can correct itself:
 
 ## Inside the server
 
-```
-            startup                                  every DOCS_REFRESH_SECONDS, or POST /refresh
-               │                                                   │
-               ▼                                                   ▼
-   git clone --depth 1  ──────────────────────────────▶  git fetch + reset
-               │                                                   │ new commit?
-               ▼                                                   ▼
-   for each .md/.mdx file in DOCS_DIR:                   build a new index on the side,
-     frontmatter → metadata (fields become filters)      then swap it in at once
-     MDX imports/components → plain text                       (a failed pull keeps serving
-     split into sections at headings → anchors                  the old index, and /readyz
-     tokens → search index                                      reports the error)
-               │
-               ▼
-     in-memory index ◀──── every tool call is a lookup here (a few ms)
-```
+![Requests arrive on one HTTP listener. Health probes go straight to the status. Everything else passes the guard: a Host check, then the shared token, an OAuth access token checked against the identity provider's keys, or the refresh secret. /mcp runs five read-only tools against an immutable search index snapshot. Separately, one syncer per source runs git against its git host, the loader turns the clone into pages, and the index builder builds a new snapshot over all sources and swaps it in.](docs/figures/server-internals.svg)
 
-- **The index is rebuilt from the handbook, never edited.** Requests always see
-  one complete version: the old one until the new one is ready.
+Two paths run through the process, and they meet only at the search index.
+
+**The request path**, top half:
+
+1. **One HTTP listener** takes everything on port 8080, as plain HTTP. TLS ends
+   in front of it, at the ingress or the platform.
+2. **Health probes** (`/healthz`, `/readyz`) skip the guard and read the status
+   each source keeps: its commit, its last sync, its last error.
+3. **The guard** checks every other request: first that the `Host` header is
+   one it serves, then auth. `/mcp` needs the shared token or, with Entra ID
+   sign-in, an access token. `/refresh` needs the refresh secret.
+4. **The token checker** decides about access tokens on its own: allowed
+   algorithm, signature by the issuer's key, issuer, audience, expiry, scope.
+   It keeps the issuer's public keys in a cache, and fetches them again when
+   they are an hour old, or for a key it has not seen, at most once a minute.
+5. **`/mcp`** speaks MCP: JSON-RPC over Streamable HTTP, stateless. Each call
+   runs one of five tools, and each tool only reads the search index. A call
+   takes a few milliseconds.
+
+**The sync path**, bottom half:
+
+1. **One syncer per source** decides when to pull: every
+   `DOCS_REFRESH_SECONDS`, every 10 seconds until the first success, or now,
+   for `POST /refresh`. A source never syncs twice at once, and one slow
+   source does not hold up another.
+2. **git** runs as a child process: a shallow clone, then fetch and reset, into
+   the source's own folder in the cache. It never follows a redirect, and is
+   killed with its helpers if it hangs.
+3. **The loader** walks the clone. It skips links, files that usually hold
+   secrets, files over 1 MB and binary files. Markdown is parsed into
+   metadata, clean text and sections. Any other file is kept as written.
+4. **The index builder** turns every source's pages into one search index,
+   off to the side, and swaps it in. Requests always see one complete index:
+   the old one until the new one is ready. A failed pull keeps the old pages,
+   and the status reports the error.
+
+A few things that follow from this:
+
+- **The index is rebuilt, never edited.** Nothing a request sends can change it.
 - **Search finds sections, not pages.** It scores each section with BM25 over:
   - the page path, title and metadata;
   - the section's heading and text.
@@ -237,8 +261,10 @@ instead, so the model can correct itself:
   off. The rules and the reasons behind them are in
   [SPEC.md §5](SPEC.md#5-search) and [MEASUREMENTS.md](MEASUREMENTS.md).
 - **Nothing about the handbook is built in.** Pages, metadata fields, rule IDs
-  and anchors all come from the Markdown. Change the handbook and the server
-  follows on the next pull.
+  and anchors all come from the files. Change a source and the server follows
+  on the next pull.
+- **Only two things go out:** git, to the git hosts, and the token checker, to
+  the identity provider. Logs go to stdout, and never include tool calls.
 
 ## What it deliberately does not do
 
