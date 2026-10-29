@@ -18,7 +18,14 @@ MAX_PER_PAGE = 3
 PREFIX_FACTOR, PREFIX_MIN_LEN = 0.5, 3
 FUZZY_FACTOR, FUZZY_MIN_LEN = 0.3, 6
 MAX_FILE_BYTES = 1_000_000
-SECRET_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
+SECRET_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".jks", ".keystore")
+# SSH private keys by their default names, and files that hold credentials for git, HTTP, npm, PyPI and PostgreSQL.
+SECRET_NAMES = frozenset(
+    {
+        *("id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "id_ecdsa_sk", "id_ed25519_sk"),
+        *(".netrc", "_netrc", ".git-credentials", ".npmrc", ".pypirc", ".pgpass"),
+    }
+)
 
 
 class ToolFailure(Exception):
@@ -50,7 +57,7 @@ def discover(root: Path, include: list[str], exclude: list[str]) -> list[str]:
 def _secret(name: str) -> bool:
     """Files that usually hold secrets are never pages, whatever the globs say (SPEC.md §4.1)."""
     lower = name.lower()
-    return lower == ".env" or lower.startswith(".env.") or lower.endswith(SECRET_SUFFIXES)
+    return lower == ".env" or lower.startswith(".env.") or lower in SECRET_NAMES or lower.endswith(SECRET_SUFFIXES)
 
 
 def _markdown(path: str) -> bool:

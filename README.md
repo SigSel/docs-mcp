@@ -255,7 +255,8 @@ instead of `DOCS_REPO_URL` and the other per-source variables:
 - **Files that are not Markdown are served as written**, in a code block: YAML,
   `pyproject.toml`, a `Dockerfile`. Include them with globs. Files over 1 MB,
   binary files and files that usually hold secrets (`.env`, `*.pem`, `*.key`,
-  `*.p12`, `*.pfx`) are skipped.
+  SSH keys, `.netrc`, `.npmrc` and others: [SPEC.md §4.1](SPEC.md#41-discovery))
+  are skipped.
 - **Search covers every source**, unless the model names one. Results, pages
   and listings say which source they come from.
 - **Each source syncs on its own.** A broken repo does not hold up the others.

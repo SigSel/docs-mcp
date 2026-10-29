@@ -293,10 +293,17 @@ metadata and path terms are kept once per page, not once per section (§5).
   - `*` matches within one segment.
   - `?` matches one non-`/` character.
   - Everything else is literal.
-- **Files that usually hold secrets are never pages**, whatever the globs say:
-  names that are `.env` or start with `.env.`, and names ending in `.pem`,
-  `.key`, `.p12` or `.pfx`, in any case. This is a safety net, not a guarantee: anything
-  else committed to a source reaches every client.
+- **Files that usually hold secrets are never pages**, whatever the globs say.
+  Names compare in any case:
+  - `.env`, and names starting with `.env.`;
+  - SSH private keys by their default names: `id_rsa`, `id_dsa`, `id_ecdsa`,
+    `id_ed25519`, `id_ecdsa_sk` and `id_ed25519_sk`;
+  - credential files: `.netrc`, `_netrc`, `.git-credentials`, `.npmrc`,
+    `.pypirc` and `.pgpass`;
+  - names ending in `.pem`, `.key`, `.p12`, `.pfx`, `.jks` or `.keystore`.
+
+  This is a safety net, not a guarantee: anything else committed to a source
+  reaches every client.
 - **A file over 1,000,000 bytes, or with a NUL byte in it, is skipped:** too
   big to be one useful result, or not text.
 - Pages are kept sorted by path in code-point order.

@@ -22,7 +22,23 @@ const PREFIX_MIN_LEN: usize = 3;
 const FUZZY_FACTOR: f64 = 0.3;
 const FUZZY_MIN_LEN: usize = 6;
 const MAX_FILE_BYTES: usize = 1_000_000;
-const SECRET_SUFFIXES: [&str; 4] = [".pem", ".key", ".p12", ".pfx"];
+const SECRET_SUFFIXES: [&str; 6] = [".pem", ".key", ".p12", ".pfx", ".jks", ".keystore"];
+/// SSH private keys by their default names, and files that hold credentials for git, HTTP, npm, `PyPI` and
+/// `PostgreSQL`.
+const SECRET_NAMES: [&str; 12] = [
+    "id_rsa",
+    "id_dsa",
+    "id_ecdsa",
+    "id_ed25519",
+    "id_ecdsa_sk",
+    "id_ed25519_sk",
+    ".netrc",
+    "_netrc",
+    ".git-credentials",
+    ".npmrc",
+    ".pypirc",
+    ".pgpass",
+];
 
 /// Metadata filters: field name to one value or a list of values.
 pub type Filters = HashMap<String, FilterValue>;
@@ -107,6 +123,7 @@ fn secret(name: &str) -> bool {
     let lower = name.to_lowercase();
     lower == ".env"
         || lower.starts_with(".env.")
+        || SECRET_NAMES.contains(&lower.as_str())
         || SECRET_SUFFIXES.iter().any(|s| lower.ends_with(s))
 }
 
