@@ -6,7 +6,8 @@ use std::sync::LazyLock;
 use indexmap::IndexMap;
 use regex::{Captures, Regex};
 use serde::Serialize;
-use yaml_rust2::{Yaml, YamlLoader};
+use yaml_rust2::parser::Parser;
+use yaml_rust2::{Event, Yaml, YamlLoader};
 
 macro_rules! re {
     ($vis:vis $name:ident, $pattern:expr) => {
@@ -124,6 +125,29 @@ pub fn glob_to_regex(glob: &str) -> Regex {
     Regex::new(&out).expect("glob regex")
 }
 
+const MAX_YAML_DEPTH: usize = 32;
+
+/// No aliases and no deep nesting, checked on the events before anything is built: the loader copies an alias's
+/// value at every use, so a few bytes can expand into gigabytes (SPEC.md §4.2).
+fn bounded(front: &str) -> bool {
+    let mut parser = Parser::new_from_str(front);
+    let mut depth = 0;
+    loop {
+        match parser.next_token() {
+            Ok((Event::Alias(_), _)) | Err(_) => return false,
+            Ok((Event::SequenceStart(..) | Event::MappingStart(..), _)) => {
+                depth += 1;
+                if depth > MAX_YAML_DEPTH {
+                    return false;
+                }
+            }
+            Ok((Event::SequenceEnd | Event::MappingEnd, _)) => depth -= 1,
+            Ok((Event::StreamEnd, _)) => return true,
+            Ok(_) => {}
+        }
+    }
+}
+
 /// Returns (mapping or None, body). Broken YAML still has its block skipped.
 pub fn split_frontmatter(text: &str) -> (Option<yaml_rust2::yaml::Hash>, String) {
     let lines: Vec<&str> = text.split('\n').collect();
@@ -133,8 +157,10 @@ pub fn split_frontmatter(text: &str) -> (Option<yaml_rust2::yaml::Hash>, String)
     for i in 1..lines.len() {
         if lines[i].trim_end() == "---" {
             let body = lines[i + 1..].join("\n");
-            let mapping = YamlLoader::load_from_str(&lines[1..i].join("\n"))
-                .ok()
+            let front = lines[1..i].join("\n");
+            let mapping = Some(&front)
+                .filter(|f| bounded(f))
+                .and_then(|f| YamlLoader::load_from_str(f).ok())
                 .and_then(|docs| docs.into_iter().next())
                 .and_then(|doc| match doc {
                     Yaml::Hash(h) => Some(h),

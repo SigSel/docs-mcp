@@ -170,6 +170,11 @@ Every refresh re-reads the directory and rebuilds the index. `commit` is `null`.
   mapping with duplicate keys) or anything other than a mapping counts as no
   frontmatter, but the body still starts after
   the closing line.
+- **Limits:** frontmatter that uses an alias (`*name`), or nests collections
+  more than 32 deep (the top-level mapping is 1), also counts as invalid. It
+  is rejected before it is built: a few aliases can expand 400 bytes into
+  gigabytes, and deep nesting can exhaust a parser's stack. Anchors (`&name`)
+  without aliases are fine.
 - **`title`** (string) and **`description`** (string) are pulled out as the
   page title and description.
 - **Metadata** is every other top-level key whose value is a scalar or a list of

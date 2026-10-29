@@ -296,7 +296,7 @@ justfile           build, test, lint, run, compare, eval, image, measure
 ## Testing
 
 ```sh
-just test            # 144 checks × 2 implementations
+just test            # 154 checks × 2 implementations
 just compare         # every page, section and 180+ searches, diffed across both
 just eval            # search quality for Nynorsk, Bokmål and English questions
 just lint            # clippy pedantic, ruff

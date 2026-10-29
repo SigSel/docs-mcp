@@ -50,6 +50,24 @@ _Yaml12Loader.add_implicit_resolver(
     "tag:yaml.org,2002:bool", re.compile(r"^(?:true|True|TRUE|false|False|FALSE)$"), list("tTfF")
 )
 
+MAX_YAML_DEPTH = 32
+
+
+def _bounded(front: str) -> bool:
+    """No aliases and no deep nesting, checked on the events before anything is built: aliases can expand a few bytes
+    into gigabytes, and the composer recurses once per level (SPEC.md §4.2)."""
+    depth = 0
+    for event in yaml.parse(front, Loader=_Yaml12Loader):
+        if isinstance(event, yaml.AliasEvent):
+            return False
+        if isinstance(event, yaml.CollectionStartEvent):
+            depth += 1
+            if depth > MAX_YAML_DEPTH:
+                return False
+        elif isinstance(event, yaml.CollectionEndEvent):
+            depth -= 1
+    return True
+
 
 @dataclass
 class Section:
@@ -119,8 +137,9 @@ def split_frontmatter(text: str) -> tuple[dict[str, Any] | None, str]:
     for i in range(1, len(lines)):
         if lines[i].rstrip() == "---":
             body = "\n".join(lines[i + 1 :])
+            front = "\n".join(lines[1:i])
             try:
-                data = yaml.load("\n".join(lines[1:i]), Loader=_Yaml12Loader)
+                data = yaml.load(front, Loader=_Yaml12Loader) if _bounded(front) else None
             except yaml.YAMLError:
                 return None, body
             return (data if isinstance(data, dict) else None), body
