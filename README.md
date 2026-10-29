@@ -413,6 +413,12 @@ To change behaviour:
 - **Tools only, no MCP resources or prompts.** The clients this is for use tools.
 - **HTML entities** such as `&nbsp;` are passed through as written.
 
+## Security
+
+Found a vulnerability? Report it privately, as [SECURITY.md](SECURITY.md)
+describes. The [threat model](docs/threat-model.md) says what docs-mcp defends
+against, what it leaves to operators and users, and what its reviews found.
+
 ## License
 
 [MIT](LICENSE).
