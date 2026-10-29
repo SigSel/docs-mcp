@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import subprocess
 import time
@@ -137,8 +138,12 @@ async def test_accepted(oauth: Server, issuer: Issuer, case: str) -> None:
     assert not result.is_error
 
 
+DEEP = base64.urlsafe_b64encode(b"[" * 10_000).decode().rstrip("=")  # JSON nested deeper than any decoder here builds
+
 REFUSED: dict[str, tuple[Callable[[Issuer], str], str]] = {
     "not a jwt": (lambda i: "not-a-jwt", "malformed token"),
+    "nested header": (lambda i: f"{DEEP}.{i.token().split('.')[1]}.c2ln", "malformed token"),
+    "nested payload": (lambda i: f"{i.token().split('.')[0]}.{DEEP}.c2ln", "malformed token"),
     "the shared token": (lambda i: TOKEN, "malformed token"),
     "padded": (lambda i: i.token().replace(".", "==.", 1), "malformed token"),
     "no kid": (lambda i: jwt.encode(i.claims(), i.keys["k1"][1], algorithm="RS256"), "malformed token"),

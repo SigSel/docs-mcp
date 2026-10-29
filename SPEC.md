@@ -163,7 +163,8 @@ missing scope.
 
 1. The token has three parts separated by `.`, each base64url without padding.
    The first two decode to JSON objects, and the first has a string `kid` and
-   a string `alg`. Otherwise: `malformed token`.
+   a string `alg`. Otherwise, including for JSON nested too deep to decode:
+   `malformed token`.
 2. `alg` is one of `RS256`, `RS384`, `RS512`, `PS256`, `PS384`, `PS512`,
    `ES256` and `ES384`. Otherwise: `unsupported algorithm`. `none` and the HMAC
    algorithms are never accepted.

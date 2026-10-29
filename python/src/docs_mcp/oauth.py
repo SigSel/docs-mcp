@@ -79,7 +79,7 @@ def _parse(token: str) -> tuple[dict[str, Any], dict[str, Any], bytes, bytes]:
     try:
         header, payload = json.loads(_b64decode(parts[0])), json.loads(_b64decode(parts[1]))
         signature = _b64decode(parts[2])
-    except ValueError:
+    except (ValueError, RecursionError):  # JSON nested too deep to decode, sent by anyone who can reach the port
         raise _invalid("malformed token") from None
     if not (isinstance(header, dict) and isinstance(payload, dict)):
         raise _invalid("malformed token")
