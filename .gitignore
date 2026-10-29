@@ -12,3 +12,6 @@ deploy/k8s/**/secrets.env
 
 # search questions about your own docs (MEASUREMENTS.md has the format)
 conformance/search_eval.json
+
+# your own Claude Code choices, such as approving playground/.mcp.json
+**/.claude/settings.local.json

@@ -53,6 +53,18 @@ run impl="rust" path=handbook dir="src/content/docs": (build impl)
       python) exec python/.venv/bin/docs-mcp ;;
     esac
 
+# Serve a local handbook checkout from a container on http://localhost:8080/mcp, as playground/ expects
+try impl="rust" path=handbook dir="src/content/docs": (image impl)
+    #!/usr/bin/env bash
+    set -euo pipefail
+    exec podman run --rm --replace --name docs-mcp-try --read-only --tmpfs /tmp \
+      -p 127.0.0.1:8080:8080 -v "{{ absolute_path(path) }}:/docs:ro,z" \
+      -e DOCS_LOCAL_PATH=/docs -e DOCS_DIR="{{ dir }}" -e DOCS_REFRESH_SECONDS=5 \
+      -e DOCS_NAME="${DOCS_NAME:-$(basename "{{ absolute_path(path) }}")}" \
+      -e DOCS_LANGUAGE="${DOCS_LANGUAGE:-Norwegian Nynorsk}" \
+      -e MCP_ALLOWED_HOSTS=localhost,127.0.0.1 \
+      "localhost/docs-mcp-{{ impl }}:dev"
+
 # Build the container image for one implementation (or all)
 image impl="all" tag="dev":
     #!/usr/bin/env bash

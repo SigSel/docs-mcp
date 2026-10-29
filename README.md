@@ -110,27 +110,38 @@ of the documentation", which it has to work out from the first results.
 
 ## Try it locally
 
-For developing docs-mcp, or previewing handbook changes before they are pushed.
-Users connect to the central deployment instead (see [Deploying](#deploying)).
-Needs [just](https://just.systems), plus the toolchain for the implementation
-you run.
+For developing docs-mcp, trying it in Claude Code, or previewing handbook
+changes before they are pushed. Users connect to the central deployment instead
+(see [Deploying](#deploying)). Needs [just](https://just.systems) and podman.
 
 ```sh
-just run rust ../dev-handbooks/dev-handbook src/content/docs   # or python
+just try rust ../dev-handbooks/dev-handbook src/content/docs   # or python
+just try rust fixtures/docs .                                  # the test handbook
 ```
 
-Then, in another terminal:
+That builds the image from your working tree and serves the handbook in a
+container on `http://localhost:8080/mcp`: no sign-in, no token, reachable only
+from this machine. Then, in another terminal:
 
 ```sh
-claude mcp add --transport http dev-handbook http://localhost:8080/mcp
+cd playground && claude
 ```
 
-Edit a page in the handbook and it is re-read within 5 seconds.
+[`playground/.mcp.json`](playground/.mcp.json) connects Claude Code to it as
+`handbook`. Approve it the first time; Claude Code remembers. Edit a page in the
+handbook and it is re-read within 5 seconds.
 
-Or with containers, no toolchains needed:
+To compare the implementations, stop the container and start the other one
+(`just try python …`). If Claude Code noticed the server was gone, reconnect it
+from `/mcp`. Both give the same answers, byte for byte (`just compare`); what
+differs is speed and memory, which `podman stats docs-mcp-try` shows live.
+
+`just run rust …` (or `python`) serves on the same address without a container,
+with the toolchain instead. The compose file (it needs `podman-compose`) runs
+both images side by side:
 
 ```sh
-cd deploy && podman compose --profile rust up   # → http://localhost:8081/mcp
+cd deploy && podman compose --profile all up   # rust → :8081, python → :8082
 ```
 
 ## Connecting clients
