@@ -2,9 +2,10 @@
 
     uv run python search_eval.py /path/to/docs [--impl python] [--show-misses]
 
-search_eval.json holds questions about the dev-handbook (written in Nynorsk), each phrased in
-Nynorsk (nn), Bokmål (nb) and English (en), plus `assistant`: the query a model writes when the
-server tells it the docs are in Nynorsk (Nynorsk keywords with Bokmål and English variants).
+search_eval.json holds questions about your docs, and stays out of the repo (MEASUREMENTS.md has
+the format). For a Nynorsk handbook, each is phrased in Nynorsk (nn), Bokmål (nb) and English
+(en), plus `assistant`: the query a model writes when the server tells it the docs are in Nynorsk
+(Nynorsk keywords with Bokmål and English variants).
 A hit is the first result whose path, or path#anchor, matches one of the targets.
 """
 
@@ -13,12 +14,16 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import sys
 import tempfile
 from pathlib import Path
 
 from conftest import Server, start_server, stop_server
 
-EVAL = json.loads(Path(__file__).with_name("search_eval.json").read_text())
+QUESTIONS = Path(__file__).with_name("search_eval.json")
+if not QUESTIONS.exists():
+    sys.exit(f"No {QUESTIONS}: write questions about your docs there (MEASUREMENTS.md has the format).")
+EVAL = json.loads(QUESTIONS.read_text())
 
 
 def rank(results: list[dict], targets: list[str]) -> int | None:

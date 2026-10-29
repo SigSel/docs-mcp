@@ -9,3 +9,6 @@ __pycache__/
 # local secrets for compose and kustomize
 deploy/.env
 deploy/k8s/**/secrets.env
+
+# search questions about your own docs (MEASUREMENTS.md has the format)
+conformance/search_eval.json

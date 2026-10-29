@@ -91,7 +91,7 @@ Translating a question into keywords is something the assistant is good at.
 - Page paths are searchable. They are often English even when the text is not:
   `virtual-environments.mdx`, `glossary.mdx`.
 
-Measured on the dev-handbook with 36 questions, each asked four ways. The table
+Measured on an internal handbook with 36 questions, each asked four ways. The table
 shows how often the right page came first, and how often it was in the top 3:
 
 | The query is written in | First | Top 3 |
