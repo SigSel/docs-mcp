@@ -9,7 +9,10 @@ It runs once, centrally, on the internal network. Users point their assistant
 at it; nobody runs it on their own machine. Running it locally is for
 developing docs-mcp and for previewing handbook changes.
 
-New to MCP? [HOW-IT-WORKS.md](HOW-IT-WORKS.md) explains the idea and walks
+New to MCP? Start with [What is MCP?](docs/what-is-mcp.md), then
+[What docs-mcp does](docs/what-docs-mcp-does.md). Deciding whether to trust it,
+or deploying it? The [threat model](docs/threat-model.md) covers what it can
+and cannot do, and how it is secured. [HOW-IT-WORKS.md](HOW-IT-WORKS.md) walks
 through a question from user to answer, with the real requests and responses.
 
 ```
@@ -140,6 +143,10 @@ claude mcp add --transport http dev-handbook https://docs-mcp.example.internal/m
 ```
 
 Add `--scope project` to write it to `.mcp.json` and share it with the repo.
+Then put the header in single quotes,
+`--header 'Authorization: Bearer ${DOCS_MCP_TOKEN}'`, so the file keeps the
+variable and Claude Code fills it in from each user's environment. With double
+quotes, the shell writes the token itself into the file, and from there into git.
 
 **VS Code** (`.vscode/mcp.json`):
 
@@ -228,7 +235,9 @@ not start without `https://` URLs.
 Also set:
 
 - `DOCS_LANGUAGE`, see [Languages](#languages).
-- A **read-only** git token.
+- A **read-only** git token, from an account that can read only the handbook.
+  An Azure DevOps PAT reaches every repo its account can see, so create it from
+  a dedicated account. See the [threat model](docs/threat-model.md#findings), F7.
 - `MCP_REFRESH_TOKEN` for the push webhook, so the webhook does not need the
   token users have.
 
@@ -293,7 +302,9 @@ you keep.
 ## Repository layout
 
 ```
-HOW-IT-WORKS.md    the idea, and a question traced from user to answer
+docs/              what MCP is, what docs-mcp does, Entra ID sign-in, the threat model
+  figures/         the diagrams, as SVG
+HOW-IT-WORKS.md    a question traced from user to answer, with real requests
 SPEC.md            the contract: config, HTTP, parsing, search, tool outputs
 rust/ python/      one implementation each, with a Containerfile
 conformance/       black-box pytest suite run against any implementation

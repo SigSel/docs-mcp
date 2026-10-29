@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="340" viewBox="0 0 800 340" role="img" aria-labelledby="title desc">
+  <title id="title">The parts of MCP</title>
+  <desc id="desc">You talk to an assistant app. The app shows your question and a list of tools to a model. When the model wants a tool, the app calls an MCP server and hands the result back to the model.</desc>
+  <style>
+    text { font-family: Helvetica, Arial, sans-serif; font-size: 14px; fill: #1f2328; }
+    .b { font-weight: 700; font-size: 15px; }
+    .m { fill: #59636e; font-size: 12.5px; }
+    .c { text-anchor: middle; }
+    .e { text-anchor: end; }
+    .flow { stroke: #59636e; stroke-width: 1.6; fill: none; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <rect width="800" height="340" rx="12" fill="#ffffff"/>
+
+  <!-- You -->
+  <circle cx="70" cy="196" r="15" fill="#ddf4ff" stroke="#0969da" stroke-width="1.6"/>
+  <path d="M42,248 a28,28 0 0 1 56,0 z" fill="#ddf4ff" stroke="#0969da" stroke-width="1.6"/>
+  <text x="70" y="272" class="b c">You</text>
+
+  <!-- You <-> app -->
+  <path d="M108,212 L222,212" class="flow" marker-end="url(#arrow)"/>
+  <text x="165" y="203" class="m c">question</text>
+  <path d="M222,240 L108,240" class="flow" marker-end="url(#arrow)"/>
+  <text x="165" y="258" class="m c">answer</text>
+
+  <!-- Model -->
+  <rect x="230" y="20" width="200" height="72" rx="10" fill="#fbefff" stroke="#8250df" stroke-width="1.6"/>
+  <text x="330" y="50" class="b c">Model</text>
+  <text x="330" y="72" class="m c">Claude, GPT, … often in the cloud</text>
+
+  <!-- App -->
+  <rect x="230" y="180" width="200" height="92" rx="10" fill="#ddf4ff" stroke="#0969da" stroke-width="1.6"/>
+  <text x="330" y="208" class="b c">Assistant app</text>
+  <text x="330" y="228" class="m c">the MCP client</text>
+  <text x="330" y="254" class="m c">Claude Code · VS Code · Cursor</text>
+
+  <!-- App <-> model -->
+  <path d="M300,178 L300,96" class="flow" marker-end="url(#arrow)"/>
+  <text x="290" y="122" class="m e">your question,</text>
+  <text x="290" y="138" class="m e">the tool list,</text>
+  <text x="290" y="154" class="m e">tool results</text>
+  <path d="M360,96 L360,176" class="flow" marker-end="url(#arrow)"/>
+  <text x="370" y="130" class="m">“call this tool”,</text>
+  <text x="370" y="146" class="m">or the answer</text>
+
+  <!-- Servers -->
+  <text x="665" y="128" class="b c">MCP servers</text>
+  <rect x="560" y="142" width="210" height="52" rx="10" fill="#dafbe1" stroke="#1a7f37" stroke-width="1.6"/>
+  <text x="665" y="164" class="c" font-weight="700">Handbook</text>
+  <text x="665" y="182" class="m c">docs-mcp</text>
+  <rect x="560" y="204" width="210" height="52" rx="10" fill="#f6f8fa" stroke="#818b98" stroke-width="1.4"/>
+  <text x="665" y="226" class="c" font-weight="700">Issue tracker</text>
+  <text x="665" y="244" class="m c">another MCP server</text>
+  <rect x="560" y="266" width="210" height="52" rx="10" fill="#f6f8fa" stroke="#818b98" stroke-width="1.4"/>
+  <text x="665" y="288" class="c" font-weight="700">Database</text>
+  <text x="665" y="306" class="m c">another MCP server</text>
+
+  <!-- App <-> servers -->
+  <path d="M434,214 L556,170" class="flow" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <path d="M434,228 L556,230" class="flow" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <path d="M434,242 L556,290" class="flow" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="492" y="158" class="m c">tool calls</text>
+  <text x="492" y="174" class="m c">and results</text>
+
+  <text x="24" y="318" class="m">The model never talks to a server. It asks the app, and the app makes the call.</text>
+</svg>

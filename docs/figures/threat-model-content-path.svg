@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="330" viewBox="0 0 800 330" role="img" aria-labelledby="title desc">
+  <title id="title">The path handbook text takes, and what stands in its way</title>
+  <desc id="desc">Text written by a handbook author goes into the repo, through docs-mcp, into your model, which may use your other tools. Three defenses: review before merge on the handbook repo, docs-mcp returning text only, and your app asking before it acts.</desc>
+  <style>
+    text { font-family: Helvetica, Arial, sans-serif; font-size: 13px; fill: #1f2328; }
+    .b { font-weight: 700; }
+    .m { fill: #59636e; font-size: 12.5px; }
+    .c { text-anchor: middle; }
+    .tag { font-size: 11.5px; font-weight: 700; }
+    .flow { stroke: #59636e; stroke-width: 1.6; fill: none; }
+    .link { stroke: #8c959f; stroke-width: 1.3; stroke-dasharray: 3 3; fill: none; }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#59636e"/>
+    </marker>
+    <path id="shield" d="M0,-10 L9,-6.5 L9,1 C9,6.5 4.5,10 0,12 C-4.5,10 -9,6.5 -9,1 L-9,-6.5 Z"/>
+  </defs>
+  <rect width="800" height="330" rx="12" fill="#ffffff"/>
+
+  <text x="20" y="32" class="b" font-size="14">Anyone who can change the handbook can put text in front of every user’s model.</text>
+
+  <!-- Chain -->
+  <rect x="20" y="52" width="128" height="60" rx="10" fill="#fff1e5" stroke="#bc4c00" stroke-width="1.5"/>
+  <text x="84" y="77" class="b c">Handbook author</text>
+  <text x="84" y="96" class="m c">or a stolen account</text>
+  <rect x="178" y="52" width="128" height="60" rx="10" fill="#fff1e5" stroke="#bc4c00" stroke-width="1.5"/>
+  <text x="242" y="77" class="b c">Handbook repo</text>
+  <text x="242" y="96" class="m c">the served branch</text>
+  <rect x="336" y="52" width="128" height="60" rx="10" fill="#dafbe1" stroke="#1a7f37" stroke-width="1.5"/>
+  <text x="400" y="77" class="b c">docs-mcp</text>
+  <text x="400" y="96" class="m c">serves the text</text>
+  <rect x="494" y="52" width="128" height="60" rx="10" fill="#fbefff" stroke="#8250df" stroke-width="1.5"/>
+  <text x="558" y="77" class="b c">Your model</text>
+  <text x="558" y="96" class="m c">reads it as context</text>
+  <rect x="652" y="52" width="128" height="60" rx="10" fill="#ddf4ff" stroke="#0969da" stroke-width="1.5"/>
+  <text x="716" y="77" class="b c">Your tools</text>
+  <text x="716" y="96" class="m c">shell, files, …</text>
+  <path d="M150,82 L174,82" class="flow" marker-end="url(#a)"/>
+  <path d="M308,82 L332,82" class="flow" marker-end="url(#a)"/>
+  <path d="M466,82 L490,82" class="flow" marker-end="url(#a)"/>
+  <path d="M624,82 L648,82" class="flow" marker-end="url(#a)"/>
+
+  <!-- Where each defense applies -->
+  <path d="M163,90 L163,150" class="link"/>
+  <path d="M400,114 L400,150" class="link"/>
+  <path d="M637,90 L637,150" class="link"/>
+  <rect x="160" y="70" width="6" height="24" rx="3" fill="#bc4c00"/>
+  <rect x="634" y="70" width="6" height="24" rx="3" fill="#0969da"/>
+
+  <!-- Defenses -->
+  <rect x="20" y="150" width="232" height="120" rx="10" fill="#ffffff" stroke="#d1d9e0" stroke-width="1.2"/>
+  <rect x="20" y="150" width="6" height="120" rx="3" fill="#bc4c00"/>
+  <use href="#shield" x="46" y="174" fill="#bc4c00"/>
+  <text x="64" y="179" class="b">Review before merge</text>
+  <text x="38" y="204" class="m">Branch protection and required</text>
+  <text x="38" y="221" class="m">review on the handbook repo.</text>
+  <text x="38" y="256" class="tag" fill="#bc4c00">The handbook’s owners</text>
+
+  <rect x="284" y="150" width="232" height="120" rx="10" fill="#ffffff" stroke="#d1d9e0" stroke-width="1.2"/>
+  <rect x="284" y="150" width="6" height="120" rx="3" fill="#1a7f37"/>
+  <use href="#shield" x="310" y="174" fill="#1a7f37"/>
+  <text x="328" y="179" class="b">Text only</text>
+  <text x="302" y="204" class="m">It cannot act, and its tools are</text>
+  <text x="302" y="221" class="m">fixed in code. The page text</text>
+  <text x="302" y="238" class="m">passes through unchanged.</text>
+  <text x="302" y="256" class="tag" fill="#1a7f37">docs-mcp</text>
+
+  <rect x="548" y="150" width="232" height="120" rx="10" fill="#ffffff" stroke="#d1d9e0" stroke-width="1.2"/>
+  <rect x="548" y="150" width="6" height="120" rx="3" fill="#0969da"/>
+  <use href="#shield" x="574" y="174" fill="#0969da"/>
+  <text x="592" y="179" class="b">Ask before acting</text>
+  <text x="566" y="204" class="m">Your app asks before it runs a</text>
+  <text x="566" y="221" class="m">command or edits a file. Read</text>
+  <text x="566" y="238" class="m">what it asks before you approve.</text>
+  <text x="566" y="256" class="tag" fill="#0969da">You and your app</text>
+
+  <text x="20" y="306" class="m">docs-mcp can only hold the middle line. The other two belong to the handbook’s owners and to you.</text>
+</svg>

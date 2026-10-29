@@ -4,6 +4,10 @@ What MCP is, who does what, and what happens between a user's question and the
 answer. The README covers configuration and deployment. [SPEC.md](SPEC.md) has
 the exact rules.
 
+For a gentler start, without the protocol details, read
+[What is MCP?](docs/what-is-mcp.md) and [What docs-mcp does](docs/what-docs-mcp-does.md).
+The [threat model](docs/threat-model.md) covers security.
+
 ## The idea
 
 [MCP](https://modelcontextprotocol.io) (Model Context Protocol) is a standard

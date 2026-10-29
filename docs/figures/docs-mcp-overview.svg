@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="360" viewBox="0 0 800 360" role="img" aria-labelledby="title desc">
+  <title id="title">docs-mcp at a glance</title>
+  <desc id="desc">Handbook authors push to the handbook repo. docs-mcp pulls from the repo, keeps a copy, builds a search index from it, and offers five read-only tools. Assistants send tool calls and get text back.</desc>
+  <style>
+    text { font-family: Helvetica, Arial, sans-serif; font-size: 13px; fill: #1f2328; }
+    .h { font-weight: 700; font-size: 16px; text-anchor: middle; }
+    .b { font-weight: 700; }
+    .m { fill: #59636e; font-size: 12.5px; }
+    .c { text-anchor: middle; }
+    .flow { stroke: #59636e; stroke-width: 1.6; fill: none; }
+    .sub { fill: #ffffff; stroke: #1a7f37; stroke-width: 1.2; }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <rect width="800" height="360" rx="12" fill="#ffffff"/>
+
+  <!-- Repo -->
+  <rect x="20" y="84" width="140" height="104" rx="10" fill="#fff1e5" stroke="#bc4c00" stroke-width="1.6"/>
+  <text x="90" y="112" class="c b">Handbook repo</text>
+  <text x="90" y="134" class="m c">Azure DevOps,</text>
+  <text x="90" y="150" class="m c">Forgejo, GitHub, …</text>
+  <text x="90" y="174" class="c" font-size="12" font-style="italic" fill="#bc4c00">the source of truth</text>
+
+  <!-- Authors -->
+  <circle cx="74" cy="244" r="10" fill="#fff1e5" stroke="#bc4c00" stroke-width="1.4"/>
+  <path d="M55,282 a19,19 0 0 1 38,0 z" fill="#fff1e5" stroke="#bc4c00" stroke-width="1.4"/>
+  <circle cx="106" cy="244" r="10" fill="#fff1e5" stroke="#bc4c00" stroke-width="1.4"/>
+  <path d="M87,282 a19,19 0 0 1 38,0 z" fill="#fff1e5" stroke="#bc4c00" stroke-width="1.4"/>
+  <text x="90" y="304" class="c b">Handbook authors</text>
+  <path d="M90,226 L90,192" class="flow" marker-end="url(#a)"/>
+  <text x="100" y="214" class="m">edit and push</text>
+
+  <!-- Repo -> docs-mcp -->
+  <path d="M164,120 L280,120" class="flow" marker-end="url(#a)"/>
+  <text x="222" y="112" class="m c">pulls</text>
+  <text x="222" y="138" class="m c">on a timer, or</text>
+  <text x="222" y="154" class="m c">on a push webhook</text>
+
+  <!-- docs-mcp -->
+  <rect x="284" y="24" width="270" height="322" rx="12" fill="#dafbe1" stroke="#1a7f37" stroke-width="1.8"/>
+  <text x="419" y="52" class="h">docs-mcp</text>
+  <text x="419" y="72" class="m c">a container on the internal network</text>
+  <rect x="304" y="92" width="230" height="56" rx="8" class="sub"/>
+  <text x="419" y="116" class="c b">A copy of the handbook</text>
+  <text x="419" y="135" class="m c">git clone, then pull</text>
+  <path d="M419,150 L419,168" class="flow" marker-end="url(#a)"/>
+  <rect x="304" y="172" width="230" height="56" rx="8" class="sub"/>
+  <text x="419" y="196" class="c b">A search index</text>
+  <text x="419" y="215" class="m c">built from the Markdown, in memory</text>
+  <path d="M419,230 L419,248" class="flow" marker-end="url(#a)"/>
+  <rect x="304" y="252" width="230" height="74" rx="8" class="sub"/>
+  <text x="419" y="276" class="c b">Five read-only tools</text>
+  <text x="419" y="296" class="m c">search · read a page · find a rule</text>
+  <text x="419" y="313" class="m c">browse · overview</text>
+
+  <!-- Assistants -->
+  <rect x="624" y="232" width="156" height="108" rx="10" fill="#ddf4ff" stroke="#0969da" stroke-width="1.6"/>
+  <text x="702" y="260" class="c b">Assistants</text>
+  <text x="702" y="281" class="m c">Claude Code,</text>
+  <text x="702" y="297" class="m c">VS Code, Cursor, …</text>
+  <text x="702" y="322" class="m c">on your network</text>
+  <path d="M620,276 L538,276" class="flow" marker-end="url(#a)"/>
+  <text x="579" y="268" class="m c">tool call</text>
+  <path d="M538,304 L620,304" class="flow" marker-end="url(#a)"/>
+  <text x="579" y="322" class="m c">text</text>
+
+  <!-- Never -->
+  <rect x="590" y="24" width="190" height="168" rx="10" fill="#f6f8fa"/>
+  <text x="606" y="50" class="b">It never</text>
+  <text x="606" y="76">writes to the repo</text>
+  <text x="606" y="100">calls an assistant first</text>
+  <text x="606" y="124">remembers earlier calls</text>
+  <text x="606" y="148">logs what you search for</text>
+  <text x="606" y="172">runs an AI model</text>
+</svg>
