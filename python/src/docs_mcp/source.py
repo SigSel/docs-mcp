@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import logging
 import os
 import shlex
 import shutil
+import signal
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -125,11 +127,27 @@ class Syncer:
             await asyncio.sleep(self.config.refresh_seconds)
             await self.sync()
 
-    async def _git(self, *args: str) -> str:
+    async def _git(self, *args: str, cwd: Path | None = None) -> str:
+        # In its own process group, so a timeout also kills the helpers git starts (git-remote-https, ssh).
         proc = await asyncio.create_subprocess_exec(
-            "git", *args, env=self._env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            "git",
+            *args,
+            cwd=cwd,
+            env=self._env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            process_group=0,
         )
-        out, err = await proc.communicate()
+        timeout = self.config.git_timeout_seconds
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(), timeout or None)
+        except TimeoutError:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            await proc.wait()
+            # A killed git can leave lock files behind; the next sync clones afresh.
+            shutil.rmtree(self._repo, ignore_errors=True)
+            raise RuntimeError(f"git {args[0]} timed out after {timeout} seconds") from None
         if proc.returncode != 0:
             raise RuntimeError(f"git {args[0]} failed: {err.decode(errors='replace').strip()}")
         return out.decode().strip()
@@ -145,6 +163,6 @@ class Syncer:
                 "clone", "--quiet", "--depth", "1", "--single-branch", *branch, "--", c.repo_url, str(self._repo)
             )
         else:
-            await self._git("-C", str(self._repo), "fetch", "--quiet", "--depth", "1", "origin", c.ref or "HEAD")
-            await self._git("-C", str(self._repo), "reset", "--quiet", "--hard", "FETCH_HEAD")
-        return await self._git("-C", str(self._repo), "rev-parse", "HEAD")
+            await self._git("fetch", "--quiet", "--depth", "1", "origin", c.ref or "HEAD", cwd=self._repo)
+            await self._git("reset", "--quiet", "--hard", "FETCH_HEAD", cwd=self._repo)
+        return await self._git("rev-parse", "HEAD", cwd=self._repo)

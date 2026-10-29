@@ -188,6 +188,10 @@ every secret variable has a `_FILE` twin.
 
 Without a webhook, it pulls every `DOCS_REFRESH_SECONDS` (default 300).
 
+A git command that hangs, for example because the host stopped answering, is
+killed after `DOCS_GIT_TIMEOUT_SECONDS` (default 120). The docs from the last
+good pull stay in service, and `last_error` in `/readyz` says what happened.
+
 ## Deploying
 
 ### Before you deploy
@@ -272,6 +276,7 @@ rust/ python/ typescript/
                    one implementation each, with a Containerfile
 conformance/       black-box pytest suite run against any implementation
   golden.json      exact expected outputs for fixtures/docs
+  githost.py       a git host over HTTP for the auth and timeout tests
   compare.py       diff all implementations against a real docs tree
   search_eval.*    search quality across nn/nb/en questions (just eval)
   measure.py       image size, memory, startup, latency (just measure)
@@ -284,7 +289,7 @@ justfile           build, test, lint, run, compare, eval, image, measure
 ## Testing
 
 ```sh
-just test            # 126 checks × 3 implementations
+just test            # 137 checks × 3 implementations
 just compare         # every page, section and 180+ searches, diffed across all three
 just eval            # search quality for Nynorsk, Bokmål and English questions
 just lint            # clippy pedantic, ruff, tsc

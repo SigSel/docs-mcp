@@ -20,6 +20,8 @@ export interface Config {
   exclude: string[];
   ignoreFields: Set<string>;
   refreshSeconds: number;
+  /** 0 means no limit */
+  gitTimeoutSeconds: number;
   name: string;
   language: string | null;
   siteUrl: string | null;
@@ -88,6 +90,7 @@ export function load(env: Env = process.env): Config {
     exclude: list(get('DOCS_EXCLUDE', env)),
     ignoreFields: new Set(list(get('DOCS_IGNORE_FIELDS', env) ?? DEFAULT_IGNORE_FIELDS)),
     refreshSeconds: int('DOCS_REFRESH_SECONDS', env, 300),
+    gitTimeoutSeconds: int('DOCS_GIT_TIMEOUT_SECONDS', env, 120),
     name: get('DOCS_NAME', env) ?? 'docs',
     language: get('DOCS_LANGUAGE', env),
     siteUrl: get('DOCS_SITE_URL', env),

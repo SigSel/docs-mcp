@@ -1,6 +1,6 @@
 // Keeping the index in step with the source: git clone/pull or a local directory (SPEC.md §3).
 
-import { execFile } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
@@ -122,11 +122,42 @@ export class Syncer {
     }
   }
 
-  private git(...args: string[]): Promise<string> {
+  private git(args: string[], cwd?: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      execFile('git', args, { env: this.env, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
-        if (error) reject(new Error(`git ${args[0]} failed: ${String(stderr).trim() || error.message}`));
-        else resolve(String(stdout).trim());
+      // Detached: its own process group, so a timeout also kills the helpers git starts (git-remote-https, ssh).
+      const child = spawn('git', args, { cwd, env: this.env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      const stdout: Buffer[] = [];
+      const stderr: Buffer[] = [];
+      child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
+      child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+      const seconds = this.config.gitTimeoutSeconds;
+      let timedOut = false;
+      const timer =
+        seconds > 0
+          ? setTimeout(() => {
+              timedOut = true;
+              try {
+                process.kill(-child.pid!, 'SIGKILL');
+              } catch {
+                // already gone
+              }
+            }, seconds * 1000)
+          : undefined;
+      child.on('error', (error) => {
+        clearTimeout(timer);
+        reject(new Error(`git ${args[0]} failed: ${error.message}`));
+      });
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        if (timedOut) {
+          // A killed git can leave lock files behind; the next sync clones afresh.
+          rmSync(this.repo, { recursive: true, force: true });
+          reject(new Error(`git ${args[0]} timed out after ${seconds} seconds`));
+        } else if (code !== 0) {
+          reject(new Error(`git ${args[0]} failed: ${Buffer.concat(stderr).toString().trim()}`));
+        } else {
+          resolve(Buffer.concat(stdout).toString().trim());
+        }
       });
     });
   }
@@ -137,12 +168,12 @@ export class Syncer {
       rmSync(this.repo, { recursive: true, force: true });
       mkdirSync(dirname(this.repo), { recursive: true });
       const branch = c.ref ? ['--branch', c.ref] : [];
-      await this.git('clone', '--quiet', '--depth', '1', '--single-branch', ...branch, '--', c.repoUrl!, this.repo);
+      await this.git(['clone', '--quiet', '--depth', '1', '--single-branch', ...branch, '--', c.repoUrl!, this.repo]);
     } else {
-      await this.git('-C', this.repo, 'fetch', '--quiet', '--depth', '1', 'origin', c.ref ?? 'HEAD');
-      await this.git('-C', this.repo, 'reset', '--quiet', '--hard', 'FETCH_HEAD');
+      await this.git(['fetch', '--quiet', '--depth', '1', 'origin', c.ref ?? 'HEAD'], this.repo);
+      await this.git(['reset', '--quiet', '--hard', 'FETCH_HEAD'], this.repo);
     }
-    return this.git('-C', this.repo, 'rev-parse', 'HEAD');
+    return this.git(['rev-parse', 'HEAD'], this.repo);
   }
 }
 

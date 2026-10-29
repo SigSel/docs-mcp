@@ -101,6 +101,15 @@ class Server:
     def logs(self) -> str:
         return self.log.read_text(errors="replace")
 
+    def wait_for_error(self, timeout: float = 10) -> dict[str, Any]:
+        """Polls /readyz until a sync has failed, and returns the status object."""
+        deadline = time.monotonic() + timeout
+        while True:
+            status = self.http("GET", "/readyz").json()
+            if status["last_error"] or time.monotonic() > deadline:
+                return status
+            time.sleep(0.1)
+
 
 def start_server(
     impl: str, env: dict[str, str], tmp: Path, ready_timeout: float = 60, wait_for: str = "/readyz"

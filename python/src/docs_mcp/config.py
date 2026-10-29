@@ -29,6 +29,7 @@ class Config:
     exclude: list[str]
     ignore_fields: frozenset[str]
     refresh_seconds: int
+    git_timeout_seconds: int  # 0 means no limit
     name: str
     language: str | None
     site_url: str | None
@@ -91,6 +92,7 @@ def load(env: dict[str, str] | None = None) -> Config:
         exclude=_list(_get("DOCS_EXCLUDE", env)),
         ignore_fields=frozenset(_list(_get("DOCS_IGNORE_FIELDS", env) or DEFAULT_IGNORE_FIELDS)),
         refresh_seconds=_int("DOCS_REFRESH_SECONDS", env, 300),
+        git_timeout_seconds=_int("DOCS_GIT_TIMEOUT_SECONDS", env, 120),
         name=_get("DOCS_NAME", env) or "docs",
         language=_get("DOCS_LANGUAGE", env),
         site_url=_get("DOCS_SITE_URL", env),

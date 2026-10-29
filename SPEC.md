@@ -25,6 +25,7 @@ reads the value from that file instead, trimmed, for secrets mounted as files
 | `DOCS_EXCLUDE` | | Comma-separated globs, relative to `DOCS_DIR` |
 | `DOCS_IGNORE_FIELDS` | see §4.2 | Comma-separated frontmatter keys that are presentation, not metadata. Setting it replaces the default list |
 | `DOCS_REFRESH_SECONDS` | `300` | How often to pull (git) or re-read (local). `0` turns it off |
+| `DOCS_GIT_TIMEOUT_SECONDS` | `120` | How long one git command may run before it is killed (§3.1). `0` turns the limit off |
 | `DOCS_NAME` | `docs` | Display name, used in the server instructions and `docs_overview` |
 | `DOCS_LANGUAGE` | | The language the docs are written in, as words a model understands: `Norwegian Nynorsk`, `English`. Tells clients which language to search in (§6) |
 | `DOCS_SITE_URL` | | Base URL of the rendered site. When set, results carry a `url` (§4.6) |
@@ -99,8 +100,18 @@ add.
     plus either `-o UserKnownHostsFile=<file> -o StrictHostKeyChecking=yes` or
     `-o StrictHostKeyChecking=accept-new`.
 
-This works the same for Azure DevOps, Forgejo/Gitea, GitHub, GitLab and plain
-SSH servers, because all of them accept HTTP Basic with a token as the password.
+  This works the same for Azure DevOps, Forgejo/Gitea, GitHub, GitLab and plain
+  SSH servers, because all of them accept HTTP Basic with a token as the password.
+- **Failure:** a git command that exits non-zero fails the sync with
+  `git <command> failed: <its stderr, trimmed>`, where `<command>` is `clone`,
+  `fetch`, `reset` or `rev-parse`.
+- **Timeout:** a git command still running after `DOCS_GIT_TIMEOUT_SECONDS` is
+  killed together with every process it started. git hands the network to
+  helpers (`git-remote-https`, `ssh`), and a helper left running keeps the
+  connection open. The sync fails with
+  `git <command> timed out after <N> seconds`, and the clone is deleted so the
+  next sync clones afresh: a killed git can leave lock files behind that would
+  make every later fetch fail.
 
 ### 3.2 Local
 

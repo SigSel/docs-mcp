@@ -18,6 +18,8 @@ pub struct Config {
     pub exclude: Vec<String>,
     pub ignore_fields: HashSet<String>,
     pub refresh_seconds: u64,
+    /// 0 means no limit.
+    pub git_timeout_seconds: u64,
     pub name: String,
     pub language: Option<String>,
     pub site_url: Option<String>,
@@ -116,6 +118,7 @@ pub fn load(env: &Env) -> Result<Config, ConfigError> {
         .into_iter()
         .collect(),
         refresh_seconds: number("DOCS_REFRESH_SECONDS", env, 300)?,
+        git_timeout_seconds: number("DOCS_GIT_TIMEOUT_SECONDS", env, 120)?,
         name: or(get("DOCS_NAME", env)?, "docs"),
         language: get("DOCS_LANGUAGE", env)?,
         site_url: get("DOCS_SITE_URL", env)?,

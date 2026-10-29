@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import os
 import shutil
-import subprocess
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -12,15 +10,9 @@ from pathlib import Path
 import pytest
 
 from conftest import FIXTURE_DOCS, TOKEN, Server, start_server, stop_server
+from githost import git
 
 pytestmark = pytest.mark.anyio
-
-
-def git(repo: Path, *args: str) -> str:
-    env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
-    return subprocess.run(
-        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True, env={**os.environ, **env}
-    ).stdout.strip()
 
 
 @pytest.fixture(scope="module")

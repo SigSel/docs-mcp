@@ -1,10 +1,13 @@
 //! Keeping the index in step with the source: git clone/pull or a local directory (SPEC.md §3).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use base64::Engine;
+use nix::sys::signal::{Signal, killpg};
+use nix::unistd::Pid;
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::process::Command;
@@ -217,12 +220,41 @@ impl Syncer {
         Ok(())
     }
 
-    async fn git(&self, args: &[&str]) -> anyhow::Result<String> {
-        let output = Command::new("git")
+    async fn git(&self, args: &[&str], cwd: Option<&Path>) -> anyhow::Result<String> {
+        let mut command = Command::new("git");
+        command
             .args(args)
             .envs(self.env.iter().cloned())
-            .output()
-            .await?;
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            // Its own process group, so a timeout also kills the helpers git starts (git-remote-https, ssh).
+            .process_group(0);
+        if let Some(dir) = cwd {
+            command.current_dir(dir);
+        }
+        let child = command.spawn()?;
+        let group = child
+            .id()
+            .and_then(|id| i32::try_from(id).ok())
+            .map(Pid::from_raw);
+        let secs = self.config.git_timeout_seconds;
+        // 0 means no limit; tokio treats a deadline past the end of time as never.
+        let limit = if secs == 0 {
+            Duration::MAX
+        } else {
+            Duration::from_secs(secs)
+        };
+        let Ok(output) = tokio::time::timeout(limit, child.wait_with_output()).await else {
+            // Dropping the wait left git to tokio, which reaps it once it is killed.
+            if let Some(group) = group {
+                let _ = killpg(group, Signal::SIGKILL);
+            }
+            // A killed git can leave lock files behind; the next sync clones afresh.
+            let _ = std::fs::remove_dir_all(&self.repo);
+            anyhow::bail!("git {} timed out after {secs} seconds", args[0]);
+        };
+        let output = output?;
         if !output.status.success() {
             anyhow::bail!(
                 "git {} failed: {}",
@@ -236,13 +268,15 @@ impl Syncer {
     async fn pull(&self) -> anyhow::Result<String> {
         let c = &self.config;
         let repo = self.repo.to_string_lossy().into_owned();
+        let cwd = Some(self.repo.as_path());
         if self.repo.join(".git").exists() {
             let git_ref = c.git_ref.as_deref().unwrap_or("HEAD");
-            self.git(&[
-                "-C", &repo, "fetch", "--quiet", "--depth", "1", "origin", git_ref,
-            ])
+            self.git(
+                &["fetch", "--quiet", "--depth", "1", "origin", git_ref],
+                cwd,
+            )
             .await?;
-            self.git(&["-C", &repo, "reset", "--quiet", "--hard", "FETCH_HEAD"])
+            self.git(&["reset", "--quiet", "--hard", "FETCH_HEAD"], cwd)
                 .await?;
         } else {
             let _ = std::fs::remove_dir_all(&self.repo);
@@ -252,8 +286,8 @@ impl Syncer {
                 args.extend(["--branch", r]);
             }
             args.extend(["--", c.repo_url.as_deref().unwrap_or_default(), &repo]);
-            self.git(&args).await?;
+            self.git(&args, None).await?;
         }
-        self.git(&["-C", &repo, "rev-parse", "HEAD"]).await
+        self.git(&["rev-parse", "HEAD"], cwd).await
     }
 }
