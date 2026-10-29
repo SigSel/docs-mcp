@@ -263,7 +263,8 @@ source wrote. **No page may cost much more to parse and index than it is
 long**, in time or memory, whatever it holds. The rules below are written so a
 linear-time implementation exists, and both are one: the Python implementation
 finds JSX comments, heading attributes and closing hashes without regexes,
-because Python's backtracking made them quadratic.
+because Python's backtracking made them quadratic, and a page's title,
+metadata and path terms are kept once per page, not once per section (§5).
 `conformance/test_page_cost.py` holds pages that once broke this rule.
 
 ### 4.1 Discovery
@@ -472,6 +473,11 @@ before the first heading.
 The page path counts because file names are often the plainest description of
 a page, and are often in English even when the text is not
 (`virtual-environments.mdx`).
+
+The path, title and metadata counts are the same for every section of a page.
+Keep them once per page and add them in when scoring: copied into each section,
+a page with thousands of metadata values and thousands of headings would hold
+their product, and run out of memory (§4).
 
 **Query terms.** The query is tokenized the same way and duplicates are
 removed. Each query term `q` matches:

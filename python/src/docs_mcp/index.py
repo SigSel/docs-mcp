@@ -6,7 +6,7 @@ import math
 import os
 import re
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -111,8 +111,19 @@ class _Doc:
     page: Page
     section: Section
     order: int
-    tf: Counter[str]
+    tf: Counter[str]  # the section's own terms: its heading and text
+    # Its page's title, metadata and path terms, one Counter shared by every section of the page. Copied into each
+    # section, a page with many of both cost memory for their product (SPEC.md §5).
+    page_tf: Counter[str]
     length: float
+
+
+@dataclass
+class _Postings:
+    """Where a term occurs: in sections' own terms, and in whole pages, as the doc ids of their sections."""
+
+    docs: set[int] = field(default_factory=set)
+    pages: list[range] = field(default_factory=list)
 
 
 def _collapse(text: str) -> str:
@@ -130,30 +141,38 @@ class DocIndex:
         self.order = {name: i for i, name in enumerate(names)}
         self.multi = multi
         self.docs: list[_Doc] = []
-        self.postings: dict[str, set[int]] = {}
+        self.postings: dict[str, _Postings] = {}
         for page in pages:
             tags = " ".join([*metadata_values(page.metadata), page.description or ""])
             title_tf, tags_tf = Counter(tokenize(page.title)), Counter(tokenize(tags))
             path_tf = Counter(tokenize(_strip_extension(page.path)))
+            shared: Counter[str] = Counter()
+            for counts, weight in ((title_tf, 2), (tags_tf, 1), (path_tf, 3)):
+                for term, n in counts.items():
+                    shared[term] += weight * n
+            shared_length = sum(shared.values())
+            first = len(self.docs)
             for order, section in enumerate(page.sections):
                 if section.level == 0 and not page.own_text(section).strip():
                     continue
+                heading = tokenize(section.heading) if section.heading else []
                 tf: Counter[str] = Counter()
-                for term, n in title_tf.items():
-                    tf[term] += 2 * n
-                if section.heading:
-                    for term in tokenize(section.heading):
-                        tf[term] += 3
-                for term, n in tags_tf.items():
-                    tf[term] += n
-                for term, n in path_tf.items():
-                    tf[term] += 3 * n
+                for term in heading:
+                    tf[term] += 3
                 for term in tokenize(_search_text(page, section)):
                     tf[term] += 1
+                if len(self.docs) == first:
+                    # The page's terms join the vocabulary in the order the page reads, as they did when each section
+                    # held them: title, heading, metadata, path, then the text.
+                    for term in (*title_tf, *heading, *tags_tf, *path_tf, *tf):
+                        self.postings.setdefault(term, _Postings())
                 doc_id = len(self.docs)
-                self.docs.append(_Doc(page, section, order, tf, float(sum(tf.values()))))
+                self.docs.append(_Doc(page, section, order, tf, shared, float(shared_length + sum(tf.values()))))
                 for term in tf:
-                    self.postings.setdefault(term, set()).add(doc_id)
+                    self.postings.setdefault(term, _Postings()).docs.add(doc_id)
+            if len(self.docs) > first:
+                for term in shared:
+                    self.postings[term].pages.append(range(first, len(self.docs)))
         self.avgdl = (sum(d.length for d in self.docs) / len(self.docs)) if self.docs else 0.0
 
     # --- tools ---------------------------------------------------------------
@@ -217,11 +236,12 @@ class DocIndex:
             if not factors:
                 continue
             matched_terms.update(factors)
-            doc_ids: set[int] = set().union(*(self.postings[t] for t in factors))
+            found = [self.postings[t] for t in factors]
+            doc_ids: set[int] = set().union(*(p.docs for p in found), *(ids for p in found for ids in p.pages))
             idf = math.log(1 + (n - len(doc_ids) + 0.5) / (len(doc_ids) + 0.5))
             for doc_id in doc_ids:
                 doc = self.docs[doc_id]
-                tf = sum(f * doc.tf.get(t, 0) for t, f in factors.items())
+                tf = sum(f * (doc.page_tf.get(t, 0) + doc.tf.get(t, 0)) for t, f in factors.items())
                 if tf <= 0:
                     continue
                 norm = K1 * (1 - B + B * doc.length / self.avgdl)

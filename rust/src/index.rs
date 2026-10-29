@@ -274,8 +274,16 @@ fn snippet(text: &str, terms: &HashSet<String>) -> String {
 struct Doc {
     page: usize,
     section: usize,
+    /// The section's own terms: its heading and text. Its page's terms are in `DocIndex::page_tf`.
     tf: IndexMap<String, f64>,
     length: f64,
+}
+
+/// Where a term occurs: in sections' own terms, and in whole pages, as the doc ids of their sections.
+#[derive(Default)]
+struct Postings {
+    docs: Vec<usize>,
+    pages: Vec<std::ops::Range<usize>>,
 }
 
 /// One search index over the pages of every source that has loaded (SPEC.md §5, §7.3).
@@ -288,8 +296,11 @@ pub struct DocIndex {
     order: HashMap<String, usize>,
     multi: bool,
     docs: Vec<Doc>,
+    /// Each page's title, metadata and path terms, which count in every one of its sections. Kept once per page:
+    /// copied into each section, a page with many of both cost memory for their product (SPEC.md §5).
+    page_tf: Vec<HashMap<String, f64>>,
     /// Insertion-ordered, like the other implementations, so scores sum in the same order.
-    postings: IndexMap<String, Vec<usize>>,
+    postings: IndexMap<String, Postings>,
     avgdl: f64,
 }
 
@@ -315,7 +326,8 @@ impl DocIndex {
             .map(|(i, n)| (n.clone(), i))
             .collect();
         let mut docs = Vec::new();
-        let mut postings: IndexMap<String, Vec<usize>> = IndexMap::new();
+        let mut page_tf = Vec::with_capacity(pages.len());
+        let mut postings: IndexMap<String, Postings> = IndexMap::new();
         for (pi, page) in pages.iter().enumerate() {
             let tags: Vec<&str> = metadata_values(&page.metadata)
                 .map(String::as_str)
@@ -324,35 +336,48 @@ impl DocIndex {
             let title_tokens = tokenize(&page.title);
             let tag_tokens = tokenize(&tags.join(" "));
             let path_tokens = tokenize(strip_extension(&page.path));
+            let mut shared: HashMap<String, f64> = HashMap::new();
+            for (tokens, n) in [
+                (&title_tokens, 2.0),
+                (&tag_tokens, 1.0),
+                (&path_tokens, 3.0),
+            ] {
+                for t in tokens {
+                    *shared.entry(t.clone()).or_default() += n;
+                }
+            }
+            let shared_length: f64 = shared.values().sum();
+            let first = docs.len();
             for (si, section) in page.sections.iter().enumerate() {
                 let own = search_text(page, section);
                 if section.level == 0 && own.trim().is_empty() {
                     continue;
                 }
+                let heading_tokens = section.heading.as_deref().map(tokenize).unwrap_or_default();
                 let mut tf: IndexMap<String, f64> = IndexMap::new();
-                let mut add = |term: &str, n: f64| *tf.entry(term.to_string()).or_default() += n;
-                for t in &title_tokens {
-                    add(t, 2.0);
+                for t in &heading_tokens {
+                    *tf.entry(t.clone()).or_default() += 3.0;
                 }
-                if let Some(h) = &section.heading {
-                    for t in &tokenize(h) {
-                        add(t, 3.0);
+                for t in tokenize(&own) {
+                    *tf.entry(t).or_default() += 1.0;
+                }
+                if docs.len() == first {
+                    // The page's terms join the vocabulary in the order the page reads, as they did when each
+                    // section held them: title, heading, metadata, path, then the text.
+                    let order = title_tokens
+                        .iter()
+                        .chain(&heading_tokens)
+                        .chain(&tag_tokens)
+                        .chain(&path_tokens);
+                    for t in order.chain(tf.keys()) {
+                        postings.entry(t.clone()).or_default();
                     }
                 }
-                for t in &tag_tokens {
-                    add(t, 1.0);
-                }
-                for t in &path_tokens {
-                    add(t, 3.0);
-                }
-                for t in &tokenize(&own) {
-                    add(t, 1.0);
-                }
-                let length = tf.values().sum();
                 let id = docs.len();
                 for term in tf.keys() {
-                    postings.entry(term.clone()).or_default().push(id);
+                    postings.entry(term.clone()).or_default().docs.push(id);
                 }
+                let length = shared_length + tf.values().sum::<f64>();
                 docs.push(Doc {
                     page: pi,
                     section: si,
@@ -360,6 +385,12 @@ impl DocIndex {
                     length,
                 });
             }
+            if docs.len() > first {
+                for term in shared.keys() {
+                    postings[term.as_str()].pages.push(first..docs.len());
+                }
+            }
+            page_tf.push(shared);
         }
         let avgdl = if docs.is_empty() {
             0.0
@@ -374,6 +405,7 @@ impl DocIndex {
             order,
             multi,
             docs,
+            page_tf,
             postings,
             avgdl,
         }
@@ -455,6 +487,12 @@ impl DocIndex {
         json!({"count": pages.len(), "pages": pages})
     }
 
+    /// How often a term counts in a section: in its page's title, metadata and path, and in its own heading and text.
+    fn tf(&self, doc: &Doc, term: &str) -> f64 {
+        let page = self.page_tf[doc.page].get(term).copied().unwrap_or(0.0);
+        page + doc.tf.get(term).copied().unwrap_or(0.0)
+    }
+
     /// The vocabulary terms a query term matches, with their factors, in vocabulary order (SPEC.md §5).
     fn matching_terms<'a>(&'a self, q: &'a str) -> Vec<(&'a str, f64)> {
         let mut factors: Vec<(&str, f64)> = Vec::new();
@@ -518,16 +556,19 @@ impl DocIndex {
             matched_terms.extend(factors.iter().map(|(t, _)| t.to_string()));
             let ids: HashSet<usize> = factors
                 .iter()
-                .flat_map(|(t, _)| self.postings[*t].iter().copied())
+                .flat_map(|(t, _)| {
+                    let p = &self.postings[*t];
+                    p.docs
+                        .iter()
+                        .copied()
+                        .chain(p.pages.iter().cloned().flatten())
+                })
                 .collect();
             let df = ids.len() as f64;
             let idf = (1.0 + (n as f64 - df + 0.5) / (df + 0.5)).ln();
             for id in ids {
                 let doc = &self.docs[id];
-                let tf: f64 = factors
-                    .iter()
-                    .map(|(t, f)| f * doc.tf.get(*t).copied().unwrap_or(0.0))
-                    .sum();
+                let tf: f64 = factors.iter().map(|(t, f)| f * self.tf(doc, t)).sum();
                 if tf <= 0.0 {
                     continue;
                 }
