@@ -1,6 +1,6 @@
-# docs-mcp: one MCP server, three implementations. `just` lists the recipes.
+# docs-mcp: one MCP server, two implementations. `just` lists the recipes.
 
-impls := "rust python typescript"
+impls := "rust python"
 handbook := env("DOCS_PATH", "../dev-handbooks/dev-handbook")
 
 default:
@@ -14,7 +14,6 @@ build impl="all":
       case $i in
         rust) (cd rust && cargo build --release --locked) ;;
         python) (cd python && uv sync --locked) ;;
-        typescript) (cd typescript && npm ci --silent && npm run build --silent) ;;
       esac
     done
 
@@ -22,11 +21,10 @@ build impl="all":
 test impl="all": (build impl)
     cd conformance && uv run pytest --impl {{ if impl == "all" { replace(impls, " ", ",") } else { impl } }}
 
-# Lint and format-check all three
+# Lint and format-check both
 lint:
     cd rust && cargo fmt --check && cargo clippy --release -- -D warnings
     cd python && uv run ruff check src && uv run ruff format --check src
-    cd typescript && npx tsc -p . --noEmit
 
 # Diff all implementations against a real docs tree
 compare docs=(handbook / "src/content/docs"): build
@@ -53,7 +51,6 @@ run impl="rust" path=handbook dir="src/content/docs": (build impl)
     case {{ impl }} in
       rust) exec rust/target/release/docs-mcp ;;
       python) exec python/.venv/bin/docs-mcp ;;
-      typescript) exec node typescript/dist/main.js ;;
     esac
 
 # Build the container image for one implementation (or all)

@@ -28,7 +28,7 @@ A question counts as found at rank *n* when the *n*-th result's `path`, or
 `path#anchor`, is one of its targets.
 
 `just eval` (or `uv run python search_eval.py <docs> --impl <impl>` in
-`conformance/`) reruns it. All three implementations give identical results.
+`conformance/`) reruns it. Every implementation gives identical results.
 
 **Results.** Right page first / in the top 3:
 
@@ -77,7 +77,7 @@ direction, not precision.
 
 ## Container footprint and latency
 
-**Method.** `just image` builds the three images; `just measure` (or
+**Method.** `just image` builds the images; `just measure` (or
 `uv run python measure.py <handbook checkout> --dir src/content/docs` in
 `conformance/`) then, for each image in turn:
 
@@ -92,6 +92,9 @@ direction, not precision.
 5. Reads memory again.
 
 **Results.**
+
+The TypeScript implementation was removed on 2026-10-29, after these runs.
+Its columns stay as a record.
 
 Measured 2026-10-29 on an 11th Gen Intel Core i7-1185G7 (8 threads), 15 GB
 RAM, Fedora 44 (Linux 7.2), podman 5.8.9. The code was commit 56a250f plus
@@ -138,18 +141,18 @@ with the same method minus latency:
 
 **Reading it.**
 
-- Most of every image is `git` and its dependencies, which all three need for
-  syncing. The Rust binary itself is a few MB.
+- Most of every image is `git` and its dependencies, which every implementation needs
+  for syncing. The Rust binary itself is a few MB.
 - Every implementation answers in a few milliseconds, which is negligible next
   to the model calling it. Startup only matters for how quickly a new pod
   becomes ready.
-- Memory is where they differ most. TypeScript grows under load until V8
-  collects garbage. Even that is well inside `deploy/k8s/base`'s 256 MiB
+- Memory is where they differ most. TypeScript grew under load until V8
+  collected garbage. Even that was well inside `deploy/k8s/base`'s 256 MiB
   limit (it requests 64 MiB).
 
 ## Consistency between implementations
 
-**Method.** `just compare` (`compare.py`) starts all three implementations
+**Method.** `just compare` (`compare.py`) starts every implementation
 against the same docs tree and diffs everything they return:
 
 - `docs_overview` and `list_docs`;
@@ -169,5 +172,5 @@ Run 2026-10-15, after the language changes:
 | The handbook as a VitePress site (`.md`, nn + root language) | 97 | 1595 | 136 | 3670 | 0 |
 | The handbook as a Zensical site (`.md`, `en/` + `nn/`) | 96 | 1594 | 136 | 3666 | 0 |
 
-The conformance suite (`just test`) adds 126 checks per implementation against
+The conformance suite (`just test`) adds 138 checks per implementation against
 `fixtures/docs`, including byte-for-byte golden outputs.

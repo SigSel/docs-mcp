@@ -1,6 +1,6 @@
 """Runs every implementation against a real docs tree and diffs all their outputs.
 
-    uv run python compare.py /path/to/docs [--impl rust,python,typescript] [--query word ...]
+    uv run python compare.py /path/to/docs [--impl rust,python] [--query word ...]
 
 Reads every page, every section by anchor, runs searches for a set of queries and for
 words taken from the pages themselves, and reports any output that differs.
@@ -57,7 +57,7 @@ def summarise(a: Any, b: Any) -> str:
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("docs", type=Path)
-    parser.add_argument("--impl", default="python,rust,typescript")
+    parser.add_argument("--impl", default="python,rust")
     parser.add_argument("--query", action="append", default=[])
     parser.add_argument("--sample", type=int, default=150, help="extra single-word queries sampled from the pages")
     args = parser.parse_args()

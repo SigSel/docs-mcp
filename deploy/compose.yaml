@@ -1,6 +1,6 @@
 # Local development: serve a handbook checkout on this machine, re-read every 5 s.
 #
-#   podman compose --profile rust up            # or python / typescript / all
+#   podman compose --profile rust up            # or python / all
 #   claude mcp add --transport http handbook http://localhost:8081/mcp
 #
 # DOCS_PATH points at the repo checkout and DOCS_DIR at the docs inside it; the
@@ -37,13 +37,6 @@ services:
     build: { context: ../python, dockerfile: Containerfile }
     image: localhost/docs-mcp-python:dev
     ports: ["127.0.0.1:8082:8080"]
-
-  typescript:
-    <<: *local
-    profiles: [typescript, all]
-    build: { context: ../typescript, dockerfile: Containerfile }
-    image: localhost/docs-mcp-typescript:dev
-    ports: ["127.0.0.1:8083:8080"]
 
   git:
     profiles: [git]

@@ -1,6 +1,6 @@
 """Starts a docs-mcp implementation as a subprocess and hands tests a client for it.
 
-Pick implementations with `--impl rust,python,typescript` (default: all three).
+Pick implementations with `--impl rust,python` (default: both).
 Each must already be built; `just build` at the repo root does that.
 """
 
@@ -30,12 +30,11 @@ SITE_URL = "https://docs.example/handbook"
 COMMANDS: dict[str, list[str]] = {
     "rust": [str(ROOT / "rust" / "target" / "release" / "docs-mcp")],
     "python": [str(ROOT / "python" / ".venv" / "bin" / "docs-mcp")],
-    "typescript": ["node", str(ROOT / "typescript" / "dist" / "main.js")],
 }
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption("--impl", default="rust,python,typescript", help="comma-separated implementations to test")
+    parser.addoption("--impl", default="rust,python", help="comma-separated implementations to test")
 
 
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:

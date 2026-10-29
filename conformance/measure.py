@@ -1,6 +1,6 @@
 """Container footprint and latency for each implementation's image.
 
-    uv run python measure.py /path/to/handbook-checkout [--dir src/content/docs] [--impl rust,python,typescript]
+    uv run python measure.py /path/to/handbook-checkout [--dir src/content/docs] [--impl rust,python]
 
 Needs the images built (`just image`). For each image: its size, the time from `podman run` to
 /readyz answering 200, memory once idle, then latency over MCP for search_docs (the questions in
@@ -126,7 +126,7 @@ async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("docs", type=Path, help="the handbook checkout")
     parser.add_argument("--dir", default="src/content/docs", help="docs directory inside the checkout")
-    parser.add_argument("--impl", default="rust,python,typescript")
+    parser.add_argument("--impl", default="rust,python")
     parser.add_argument("--tag", default="dev")
     parser.add_argument("--rounds", type=int, default=3, help="passes over the eval questions")
     args = parser.parse_args()
@@ -144,7 +144,7 @@ async def main() -> None:
         ("search_docs, 95th percentile", "search_p95", "{:.1f} ms"),
         ("read_doc (largest page), median", "read_p50", "{:.1f} ms"),
     ]
-    print("| | " + " | ".join(i.capitalize() if i != "typescript" else "TypeScript" for i in impls) + " |")
+    print("| | " + " | ".join(i.capitalize() for i in impls) + " |")
     print("|---|" + "---|" * len(impls))
     for label, key, fmt in rows:
         print(f"| {label} | " + " | ".join(fmt.format(results[i][key]) for i in impls) + " |")

@@ -22,9 +22,9 @@ docs-mcp container ── parses Markdown + frontmatter → in-memory search ind
 Claude Code · VS Code · Cursor · …   on the internal network
 ```
 
-It is written three times, in **Rust**, **Python** and **TypeScript**, against
-one [specification](SPEC.md). A shared [conformance suite](conformance/) checks
-that all three return the same bytes. Pick whichever your team would rather
+It is written twice, in **Rust** and **Python**, against one
+[specification](SPEC.md). A shared [conformance suite](conformance/) checks
+that both return the same bytes. Pick whichever your team would rather
 maintain (see [Which implementation](#which-implementation)).
 
 ## The handbook stays in charge
@@ -110,7 +110,7 @@ Needs [just](https://just.systems), plus the toolchain for the implementation
 you run.
 
 ```sh
-just run rust ../dev-handbooks/dev-handbook src/content/docs   # or python / typescript
+just run rust ../dev-handbooks/dev-handbook src/content/docs   # or python
 ```
 
 Then, in another terminal:
@@ -236,7 +236,7 @@ filesystem except `/tmp`. Endpoints:
 
 | Where | How |
 |---|---|
-| Laptop, for development | `deploy/compose.yaml` (profiles `rust`, `python`, `typescript`, `git`) |
+| Laptop, for development | `deploy/compose.yaml` (profiles `rust`, `python`, `git`) |
 | Kubernetes | `kubectl apply -k deploy/k8s/overlays/example`. Copy the overlay, then set image, repo, `MCP_ALLOWED_HOSTS` and `secrets.env` |
 | Azure Container Apps, AWS App Runner/ECS, a VM | Run the image with the env vars below. Ingress on port 8080, health check `/readyz` |
 
@@ -253,18 +253,18 @@ The full configuration list is in [SPEC.md §1](SPEC.md#1-configuration).
 
 ## Which implementation
 
-All three behave identically, byte for byte. They differ in what they cost to
+Both behave identically, byte for byte. They differ in what they cost to
 run (full table, method and machine in
 [MEASUREMENTS.md](MEASUREMENTS.md#container-footprint-and-latency)):
 
-| | Rust | Python | TypeScript |
-|---|---|---|---|
-| Image size | 200 MB | 276 MB | 364 MB |
-| Start to ready | 0.5 s | 3.1 s | 0.9 s |
-| Memory, idle / after load | 9 / 11 MB | 63 / 64 MB | 54 / 116 MB |
-| search_docs, median | 4 ms | 11 ms | 10 ms |
-| Source (non-blank lines) | 1824 | 987 | 1085 |
-| SDK | rmcp 3.8 + axum | mcp 2.3 (`MCPServer`) + Starlette | @modelcontextprotocol/server 2.3 |
+| | Rust | Python |
+|---|---|---|
+| Image size | 200 MB | 276 MB |
+| Start to ready | 0.5 s | 3.1 s |
+| Memory, idle / after load | 9 / 11 MB | 63 / 64 MB |
+| search_docs, median | 4 ms | 11 ms |
+| Source (non-blank lines) | 1824 | 987 |
+| SDK | rmcp 3.8 + axum | mcp 2.3 (`MCPServer`) + Starlette |
 
 Most of every image is `git` and its dependencies. Choose the language your
 team will keep fixing. The spec and the conformance suite stay useful whichever
@@ -275,8 +275,7 @@ you keep.
 ```
 HOW-IT-WORKS.md    the idea, and a question traced from user to answer
 SPEC.md            the contract: config, HTTP, parsing, search, tool outputs
-rust/ python/ typescript/
-                   one implementation each, with a Containerfile
+rust/ python/      one implementation each, with a Containerfile
 conformance/       black-box pytest suite run against any implementation
   golden.json      exact expected outputs for fixtures/docs
   githost.py       a git host over HTTP for the auth and timeout tests
@@ -292,10 +291,10 @@ justfile           build, test, lint, run, compare, eval, image, measure
 ## Testing
 
 ```sh
-just test            # 138 checks × 3 implementations
-just compare         # every page, section and 180+ searches, diffed across all three
+just test            # 138 checks × 2 implementations
+just compare         # every page, section and 180+ searches, diffed across both
 just eval            # search quality for Nynorsk, Bokmål and English questions
-just lint            # clippy pedantic, ruff, tsc
+just lint            # clippy pedantic, ruff
 just image measure   # build the images, then measure them
 ```
 

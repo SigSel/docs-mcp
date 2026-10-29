@@ -2,8 +2,6 @@
 rust/target/
 python/.venv/
 python/.ruff_cache/
-typescript/node_modules/
-typescript/dist/
 conformance/.venv/
 __pycache__/
 .pytest_cache/

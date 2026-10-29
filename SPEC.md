@@ -1,6 +1,6 @@
 # docs-mcp specification
 
-The contract the Rust, Python and TypeScript implementations all follow. The
+The contract the Rust and Python implementations both follow. The
 conformance suite in `conformance/` checks it against each one. When this file
 and an implementation disagree, the implementation has the bug.
 
@@ -67,7 +67,7 @@ comparison is constant-time.
 **Host check.** The hostname part of the `Host` header (port stripped,
 case-insensitive, IPv6 brackets stripped) must be in `MCP_ALLOWED_HOSTS`, or the
 request gets `403`. It protects against DNS rebinding. The SDKs' own host checks
-are turned off so all three behave the same. Health endpoints skip it, because
+are turned off so both behave the same. Health endpoints skip it, because
 Kubernetes probes use the pod IP.
 
 The host check runs before auth, so a bad host gets `403` even with a valid
