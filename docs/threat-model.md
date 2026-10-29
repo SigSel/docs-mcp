@@ -10,14 +10,24 @@ them. It is written for three readers:
   [where to focus](#where-to-focus).
 
 For background, read [What is MCP?](what-is-mcp.md) and
-[What docs-mcp does](what-docs-mcp-does.md) first.
+[What docs-mcp does](what-docs-mcp-does.md) first. Found a vulnerability?
+Report it privately, as [SECURITY.md](../SECURITY.md) describes.
 
-**Reviewed** on 2026-10-29: both implementations at commit `9a587e6`, the
-container images, and the example deployments in `deploy/`. The review found
-one serious problem, which is fixed (see [F1](#findings)). Updated the same day
-for what followed from it: Entra ID sign-in ([E1](#e1-tool-calls),
-[E8](#e8-the-identity-provider)), TLS in the example deployment, and serving
-several sources ([E4](#e4-handbook-content)).
+**Reviewed twice**, both times on 2026-10-29:
+
+- **First review:** both implementations at commit `9a587e6`, the container
+  images, and the example deployments in `deploy/`. It found one serious
+  problem, which is fixed ([F1](#findings)). Updated the same day for what
+  followed from it: Entra ID sign-in ([E1](#e1-tool-calls),
+  [E8](#e8-the-identity-provider)), TLS in the example deployment, and serving
+  several sources ([E4](#e4-handbook-content)).
+- **Second review, before the repository went public:** commit `a03965f`,
+  with the Container Apps guide and the playground added since. It read the
+  code against the claims here, attacked both servers directly, and audited
+  the dependencies. It found three medium problems: two ways for one
+  page to take docs-mcp down, and a default that put it on the network without
+  auth. And three low ones. All six are fixed ([F13 to F18](#findings)), and so
+  is F3 from the first review.
 
 ## Summary
 
@@ -42,13 +52,19 @@ several sources ([E4](#e4-handbook-content)).
 
 ### For maintainers and operators
 
-- **Fixed in this review:** a link committed to the handbook repo could make
-  docs-mcp serve any file it can read, including its own environment and with
-  it both tokens ([F1](#findings)). One page with hostile YAML could crash the
-  Rust implementation or stop the Python one from syncing ([F2](#findings)).
-- **Added after the review:** Entra ID sign-in, so users no longer share one
-  token ([F9](#findings)). TLS in the example deployment, which forwards only
-  the paths clients need ([F4, F8](#findings)).
+- **Fixed in the first review:** a link committed to the handbook repo could
+  make docs-mcp serve any file it can read, including its own environment and
+  with it both tokens ([F1](#findings)). One page with hostile YAML could crash
+  the Rust implementation or stop the Python one from syncing ([F2](#findings)).
+- **Added after the first review:** Entra ID sign-in, so users no longer share
+  one token ([F9](#findings)). TLS in the example deployment, which forwards
+  only the paths clients need ([F4, F8](#findings)).
+- **Fixed in the second review:** one page could still take docs-mcp down.
+  Crafted Markdown froze the Python implementation for hours, and a page with
+  thousands of metadata values and headings ran either implementation out of
+  memory ([F13, F18](#findings)). Outside a container, docs-mcp listened on
+  every network interface by default, so a laptop running it without a token
+  served the handbook to its whole network ([F14](#findings)).
 - **Open:** git tokens on some hosts reach far more than the handbook
   ([F7](#findings)). Copilot CLI and the JetBrains plugin have open bugs with
   Entra ID sign-in ([guide](sso-entra.md#3-connect-the-clients)).
@@ -173,9 +189,32 @@ tricks did work, until this review ([F2](#findings)):
 Both implementations now check the YAML before building it. Frontmatter that
 uses an alias, or nests more than 32 deep, counts as invalid, like broken YAML
 ([SPEC.md §4.2](../SPEC.md#42-frontmatter-and-metadata),
-`conformance/test_yaml_limits.py`). The Rust implementation's regular
-expressions run in linear time. Python's can backtrack, so a crafted page might
-slow down an index build. That was not measured.
+`conformance/test_yaml_limits.py`).
+
+**Pages that cost more than they are long.** The first review left a question
+open: Python's regular expressions can backtrack, so could a crafted page slow
+down an index build? The second review measured it, and found worse
+([F13, F18](#findings)):
+
+- **The Python parser was quadratic in places.** Three of its regular
+  expressions, for JSX comments, heading IDs and closing `#`s, backtracked
+  over long runs of text. Python holds its global lock while a regular
+  expression runs, so the whole server stopped answering, `/healthz` included:
+  for 58 seconds on one heading of 60 kB, and for hours on a page of 1 MB. In
+  Kubernetes, the liveness probe would have restarted it into the same page,
+  again and again. A page of many headings cost minutes more.
+- **Both implementations multiplied two counts.** Every section kept its own
+  copy of its page's title, metadata and path terms. A page of 229 kB, with
+  20,000 metadata values and 20,000 headings, ran the Rust implementation out
+  of 3 GB in 28 seconds. The Python one was still building after two minutes.
+
+Both are fixed without changing a single answer: 288 searches against the real
+handbook give the same results, scores included, before and after. Python now
+finds those three patterns with string scans, and both implementations keep a
+page's terms once ([SPEC.md §4](../SPEC.md#4-content-model)). The page of
+229 kB now indexes in 0.2 s in Rust and 3.7 s in Python.
+`conformance/test_page_cost.py` holds a page of each kind, and fails on the old
+code. The Rust implementation's regular expressions run in linear time.
 
 **A very large repo.** The clone is shallow and single-branch, and the
 Kubernetes example caps the cache at 512 MB and memory at 256 MB. A repo that
@@ -188,10 +227,12 @@ code repos often have looser review than the handbook, and whoever merges
 there can now steer every user's assistant. They also hold files nobody
 thought of as content:
 
-- Files that usually hold secrets (`.env`, `*.pem`, `*.key`, `*.p12`, `*.pfx`)
-  are never served, whatever the globs say. That is a safety net, not a
-  guarantee: anything else committed to a source reaches every user, and their
-  model providers.
+- Files that usually hold secrets are never served, whatever the globs say:
+  `.env`, private keys (`*.pem`, `*.key`, and SSH keys by their default
+  names), keystores, and credential files such as `.netrc`, `.npmrc` and
+  `.git-credentials` ([SPEC.md §4.1](../SPEC.md#41-discovery),
+  [F17](#findings)). That is a safety net, not a guarantee: anything else
+  committed to a source reaches every user, and their model providers.
 - Binary files and files over 1 MB are skipped.
 - Files that are not Markdown are served as written, without parsing, so they
   add no parser to attack.
@@ -206,7 +247,17 @@ review required on every source.
 
 **Reading without permission.** With neither a shared token nor sign-in,
 anyone who can reach the port can read the handbook. docs-mcp warns about this
-at every start. A shared token is compared in constant time. It is one token for
+at every start.
+
+Outside a container, docs-mcp now listens only on this machine unless
+`MCP_HOST` says otherwise. It used to listen on every network interface, so
+`just run` on a laptop served the handbook, without a token, to everyone on the
+same Wi-Fi ([F14](#findings)). The host check did not stop that: it guards
+against DNS rebinding, and any client can send `Host: localhost`. The images
+listen on every interface, as a container must. Publish their port on
+`127.0.0.1`, as `just try` and the compose file do, or turn on auth.
+
+A shared token is compared in constant time. It is one token for
 everyone, so it cannot be revoked for one person, and the server cannot tell
 users apart ([F9](#findings)). With Entra ID sign-in, each user has their own
 token, and who may get one is decided in Entra ID. docs-mcp refuses to start
@@ -223,6 +274,11 @@ docs-mcp never passes a token on to anything. What is left: a stolen access
 token works until it expires, 60 to 90 minutes, like any bearer token. Removing
 a user in Entra ID takes effect at the same pace. Low.
 
+**Tokens built to break the check.** Anyone who can reach the port can send
+any token. One whose JSON was nested 10,000 levels deep made the Python
+implementation answer `500` and log a traceback. It is now a
+`malformed token`, as it always was in Rust ([F15](#findings)).
+
 **DNS rebinding.** A web page can point a name it controls at an internal
 address, and then reach a server there from the user's browser. docs-mcp
 refuses requests whose `Host` header is not in `MCP_ALLOWED_HOSTS`, before it
@@ -234,12 +290,12 @@ cannot send a tool call from another site. Tested in
 **Reading files through `read_doc(path)`.** Not possible. Paths are looked up in
 the in-memory list of pages. No request opens a file. None.
 
-**Overloading the server.** Bodies over 4 MB are refused with `413`. Within
-that limit a query can be long, and the search work grows with it: a query of
-20,000 words took 3.3 s of CPU in the Rust implementation and 28 s in the
-Python one, against the real handbook. Other requests kept being answered.
-There is no rate limit ([F3](#findings)). Low: it needs the token, or no token
-being set.
+**Overloading the server.** Bodies over 4 MB are refused with `413`. That
+limit comes from the MCP SDKs, so `conformance/test_http.py` checks it.
+Only the first 64 distinct words of a query count ([F3](#findings)). A query
+of 20,000 words, which took 3.3 s of CPU in the Rust implementation and 28 s in
+the Python one, now takes 0.03 s and 0.14 s against the real handbook. There
+is no rate limit. Low: it needs the token, or no token being set.
 
 **Stealing a token in transit.** docs-mcp speaks plain HTTP. TLS has to be
 added in front of it, by the ingress or the platform. The example ingress now
@@ -258,8 +314,9 @@ there into git. Fixed: it now keeps `${DOCS_MCP_TOKEN}` in the file
 
 Behind the host check, then its own secret: `MCP_REFRESH_TOKEN`, or the shared
 token when that is not set. With sign-in on and no refresh secret, `/refresh`
-is off. Anyone with the secret can start syncs. They run one at a time, and each
-costs one small git fetch. Low.
+is off. Anyone with the secret can start syncs. They run one at a time, and
+calls that arrive while one waits to start share it, so a burst of calls costs
+one small git fetch, not one each ([F16](#findings)). Low.
 
 ### E3: Health endpoints
 
@@ -267,7 +324,9 @@ Open on purpose, so the platform can probe the pod's IP. `/readyz` shows the
 page count, the commit, the time of the last sync, and the last error. That
 error is git's own message, which can name the repo's host and path. No page
 content. The example ingress no longer forwards them, so only the cluster can
-reach them ([F8](#findings)). Low.
+reach them ([F8](#findings)). Container Apps' ingress cannot leave paths out,
+so in the public setup of [its guide](deploy-azure-container-apps.md),
+`/readyz` is on the internet. Low: it shows no page content and no secret.
 
 ### E5: The git host
 
@@ -335,25 +394,40 @@ with `--locked`. The Rust code forbids `unsafe`. Base images are pinned by tag,
 not by digest, so a tag can move under a rebuild ([F10](#findings)). Most of
 each image is git and its dependencies, from Debian.
 
+`just audit` checks every lock file against known vulnerabilities: RustSec for
+Rust, PyPI's advisories for Python. At the second review the Python lock files
+had none. The Rust one had two, both in `jsonwebtoken`'s cryptography: timing
+leaks in operations on *secret* keys and numbers. docs-mcp only verifies
+signatures, with the issuer's public keys, so neither applies.
+`rust/deny.toml` says why, and needs another look whenever `jsonwebtoken` is
+updated.
+
 ## Findings
 
-From this review. *Fixed* means fixed in this repository; the rest need a
-change to the code, the docs or a deployment.
+From both reviews: F1 to F12 from the first, F13 to F18 from the second.
+*Fixed* means fixed in this repository; the rest need a change to the code,
+the docs or a deployment.
 
 | | Finding | Severity | Status |
 |---|---|---|---|
 | **F1** | A symbolic link in the handbook repo was served as a page. `leak.md → /proc/self/environ` gave every caller both tokens | High | **Fixed** in `9a587e6`. Links are skipped, and the docs folder must stay inside the repo. `conformance/test_links.py` |
 | **F2** | Hostile YAML in one page's frontmatter. An alias bomb of about 400 bytes crashed the Rust implementation out of memory, so in Kubernetes every replica restarted in a loop. A few hundred levels of nesting failed the Python implementation's whole sync | Medium | **Fixed.** Aliases and nesting over 32 levels make frontmatter invalid ([SPEC.md §4.2](../SPEC.md#42-frontmatter-and-metadata)). `conformance/test_yaml_limits.py` |
-| **F3** | No limit on query length. A long query costs seconds of CPU | Low | Open. Suggest: cap the number of distinct query words, say at 64 |
+| **F3** | No limit on query length. A long query costs seconds of CPU | Low | **Fixed** in the second review. Only the first 64 distinct query words count ([SPEC.md §5](../SPEC.md#5-search)). `conformance/test_tools.py` |
 | **F4** | docs-mcp speaks plain HTTP, and the example ingress added no TLS. Tokens and queries crossed the network readable | Medium | **Mostly fixed.** The example ingress terminates TLS, the README requires it, and sign-in will not start without `https://` URLs. A shared-token deployment can still skip it |
 | **F5** | The README's `--scope project` advice would have committed the MCP token to the repo in `.mcp.json` | Medium | **Fixed** in the README |
 | **F6** | Over SSH without a `known_hosts` file, any new container trusts the first host key it sees | Low | Open. Require `DOCS_GIT_KNOWN_HOSTS_FILE` for SSH in the deployment docs |
 | **F7** | Git tokens on Azure DevOps, and Forgejo user tokens, reach every repo their account can read | Medium | Operator guidance: create the token from an account that can read only the served repos, or use a per-repo deploy key |
-| **F8** | `/readyz` needs no token and shows git's error text. The example ingress exposed it | Low | **Fixed** in the example. The ingress forwards only `/mcp`, `/refresh` and the OAuth metadata |
+| **F8** | `/readyz` needs no token and shows git's error text. The example ingress exposed it | Low | **Fixed** in the Kubernetes example. The ingress forwards only `/mcp`, `/refresh` and the OAuth metadata. Open in the public setup of the Container Apps guide, whose ingress forwards every path |
 | **F9** | One shared token for every user and for the webhook. No revoking it for one person, no record of who asked | Low | **Fixed** with [Entra ID sign-in](sso-entra.md), and `MCP_REFRESH_TOKEN` for the webhook. Still true in shared-token mode: rotate the token when someone leaves or it leaks |
 | **F10** | Base images pinned by tag. git in the image needs security updates | Low | Open. Pin digests, rebuild and scan regularly |
 | **F11** | git and ssh inherit docs-mcp's other secrets from the environment | Low | Open. Pass git only what it needs |
 | **F12** | No network policy in the Kubernetes example | Low | Open. Allow egress only to DNS, the git host and the identity provider, and ingress only from the ingress controller |
+| **F13** | Crafted Markdown made the Python parser quadratic. Three regular expressions backtracked over long runs of text while holding Python's global lock: one heading of 60 kB froze the whole server for 58 seconds, a page of 1 MB for hours, and Kubernetes would restart it into the same page. A page of many headings cost minutes | Medium | **Fixed.** String scans with the same results. `conformance/test_page_cost.py` |
+| **F14** | Outside a container, docs-mcp listened on every network interface by default. The host check is no access control, so `just run` on a laptop, without a token, served the handbook to its whole network | Medium | **Fixed.** `MCP_HOST` defaults to `127.0.0.1`; the images set `0.0.0.0`. `conformance/test_http.py` |
+| **F15** | An access token with JSON nested 10,000 deep made the Python implementation answer `500` and log a traceback, for anyone who could reach the port | Low | **Fixed.** A `malformed token`, as in Rust. `conformance/test_oauth.py` |
+| **F16** | Every `/refresh` call ran its own git fetch, one after another, however many arrived | Low | **Fixed.** Calls that arrive while a sync waits to start share it. `conformance/test_refresh.py` |
+| **F17** | The secret-file safety net missed SSH private keys, keystores, and credential files such as `.netrc`, `.npmrc` and `.git-credentials` | Low | **Fixed.** [SPEC.md §4.1](../SPEC.md#41-discovery) has the list. `conformance/test_sources.py` |
+| **F18** | Every section kept its own copy of its page's title, metadata and path terms. A page of 229 kB with 20,000 metadata values and 20,000 headings ran the Rust implementation out of 3 GB in 28 seconds, and kept the Python one busy for minutes. In Kubernetes, every replica would restart in a loop | Medium | **Fixed.** A page's terms are kept once ([SPEC.md §5](../SPEC.md#5-search)); search results are unchanged. `conformance/test_page_cost.py` |
 
 ## Where to focus
 
@@ -362,8 +436,10 @@ For maintainers, in order:
 1. **The content pipeline** ([E4](#e4-handbook-content)). Everything docs-mcp
    reads from the repo is input from whoever can push to it. Keep two rules:
    nothing outside the docs folder is ever read, and no page costs much more
-   to parse than it is long. Add a conformance test for every parsing change,
-   including hostile input.
+   to parse and index than it is long, in time or memory. Add a conformance
+   test for every parsing change, including hostile input: pages like those in
+   F13 and F18 go in `conformance/test_page_cost.py`. In Python, prefer string
+   methods to regular expressions that can backtrack.
 2. **The secrets** ([E5](#e5-the-git-host), [E6](#e6-configuration-and-secrets)).
    The git token goes to the repo's host and nowhere else. Keep the redirect,
    on-disk and log tests green, and fix F11.
@@ -374,7 +450,8 @@ For maintainers, in order:
    algorithms without a test for each.
 4. **The deployment defaults** (F4, F6, F8, F12). Most real exposure comes from
    how docs-mcp is run, not from its code. Make the safe choice the example.
-5. **Patching** (F10). Most of the image is git. Rebuild often.
+5. **Patching** (F10). Most of the image is git. Rebuild often, and run
+   `just audit` before every release.
 
 This model changes, and needs a new review, when docs-mcp:
 
@@ -394,6 +471,9 @@ This model changes, and needs a new review, when docs-mcp:
 - [ ] `MCP_REFRESH_TOKEN` is set, and only the push webhook has it.
 - [ ] TLS is terminated in front of docs-mcp. Plain HTTP is not reachable from
       outside the cluster.
+- [ ] Without a token or sign-in, docs-mcp is reachable only from this
+      machine: `MCP_HOST` left at `127.0.0.1`, or a container's port published
+      on `127.0.0.1`.
 - [ ] `MCP_ALLOWED_HOSTS` lists exactly the names clients use, and is not `*`.
 - [ ] The git token is read-only, from an account that can read only the
       handbook. Or a per-repo deploy key over SSH.
@@ -414,7 +494,9 @@ This model changes, and needs a new review, when docs-mcp:
       page and check. Tell the handbook's owners if the page says something it
       should not.
 
-## How this review was done
+## How the reviews were done
+
+**First review:**
 
 - Read both implementations, [SPEC.md](../SPEC.md), the Containerfiles, the
   deployment examples and the conformance suite.
@@ -450,5 +532,28 @@ This model changes, and needs a new review, when docs-mcp:
     one server. It covers skipped secret, binary and large files, file pages,
     lookups across sources, a failing source, per-source refresh, and
     configuration errors.
-- Not covered: git itself, the MCP SDKs beyond how docs-mcp uses them, the
-  platform, the assistant apps and the model providers.
+**Second review**, the same way, and:
+
+- Read the code at `a03965f` against the claims in this model, and ran the
+  conformance suite: 468 checks, all passing.
+- **The guard:** 19 variants of the paths `/mcp` and `/refresh`
+  (percent-encoded, doubled slashes, other case, a trailing `/` or `;`), a
+  missing `Host`, two `Host` headers and a WebSocket upgrade, against both
+  implementations. None got past the host check and auth.
+- **Pages built to be expensive**, timed in both implementations: the cases in
+  F13 and F18. The old and new code of both then answered the same 288
+  searches and listings against the real handbook, and every answer matched,
+  scores included.
+- **The defaults:** started with no configuration, then read a page through
+  this machine's network address (F14). Sent a token nested 10,000 deep
+  (F15), and ten `/refresh` calls while a fetch hung (F16).
+- **The body limit:** 3 MB answered and 5 MB refused with `413`, in both.
+- **Dependencies:** `cargo deny check advisories` and `pip-audit` on every
+  lock file ([E7](#e7-the-build)). `httpx2` is the HTTP client the official
+  MCP SDK depends on, not a look-alike.
+- **History:** the git history holds no secrets and no handbook text.
+- After the fixes: 490 checks, all passing. Each new test fails on the code
+  before its fix.
+
+Not covered by either: git itself, the MCP SDKs beyond how docs-mcp uses them,
+the platform, the assistant apps and the model providers.
