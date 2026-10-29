@@ -399,3 +399,7 @@ To change behaviour:
   source. For sources only some people may read, run a separate server.
 - **Tools only, no MCP resources or prompts.** The clients this is for use tools.
 - **HTML entities** such as `&nbsp;` are passed through as written.
+
+## License
+
+[MIT](LICENSE).
