@@ -80,7 +80,9 @@ class Syncer:
         self.synced_at: str | None = None
         self.last_error: str | None = None
         self._changed = changed
-        self._lock = asyncio.Lock()
+        self._lock = asyncio.Lock()  # held by the sync that is running
+        self._queued: asyncio.Task[bool] | None = None  # the sync waiting for the lock, which later calls join
+        self._tasks: set[asyncio.Task[bool]] = set()  # asyncio holds tasks only weakly
         self._repo = repo
         self._env = git_env(config, source.repo_url)
 
@@ -113,7 +115,18 @@ class Syncer:
         }
 
     async def sync(self) -> bool:
+        """One sync that starts after this call, and whether it succeeded. Calls made while it waits to start share it,
+        so a burst of /refresh calls costs one fetch. Syncs never overlap (SPEC.md §3.3)."""
+        if self._queued is None:
+            # A task of its own, so it runs to the end even if every caller goes away.
+            self._queued = task = asyncio.create_task(self._sync_next())
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
+        return await asyncio.shield(self._queued)
+
+    async def _sync_next(self) -> bool:
         async with self._lock:
+            self._queued = None
             try:
                 s = self.source
                 if s.repo_url:

@@ -12,7 +12,7 @@ use nix::sys::signal::{Signal, killpg};
 use nix::unistd::Pid;
 use serde_json::{Map, Value, json};
 use tokio::process::Command;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, watch};
 use tokio::task::JoinSet;
 
 use crate::config::{Config, Source};
@@ -104,7 +104,10 @@ struct State {
 pub struct Syncer {
     pub source: Source,
     state: RwLock<State>,
+    /// Held by the sync that is running.
     lock: Mutex<()>,
+    /// The sync waiting for `lock`, if any, which later calls join (SPEC.md §3.3).
+    queued: std::sync::Mutex<Option<watch::Receiver<Option<bool>>>>,
     repo: PathBuf,
     env: Vec<(String, String)>,
     timeout: u64,
@@ -241,6 +244,7 @@ impl Library {
                 source: s.clone(),
                 state: RwLock::new(State::default()),
                 lock: Mutex::new(()),
+                queued: std::sync::Mutex::new(None),
             })
             .collect();
         Self {
@@ -352,7 +356,7 @@ impl Library {
         while set.join_next().await.is_some() {}
     }
 
-    async fn run_source(&self, i: usize) {
+    async fn run_source(self: &Arc<Self>, i: usize) {
         while !self.sync_one(i).await {
             tokio::time::sleep(Duration::from_secs(RETRY_SECONDS)).await;
         }
@@ -365,10 +369,33 @@ impl Library {
         }
     }
 
-    /// Runs one sync of one source, after any sync of it already in progress; never overlaps.
-    async fn sync_one(&self, i: usize) -> bool {
-        let syncer = &self.syncers[i];
-        let _guard = syncer.lock.lock().await;
+    /// One sync of source `i` that starts after this call, and whether it succeeded. Calls made while it waits to
+    /// start share it, so a burst of /refresh calls costs one fetch. Syncs of a source never overlap (SPEC.md §3.3).
+    async fn sync_one(self: &Arc<Self>, i: usize) -> bool {
+        let mut done = {
+            let mut queued = self.syncers[i].queued.lock().unwrap();
+            if let Some(waiting) = queued.as_ref() {
+                waiting.clone()
+            } else {
+                let (tx, rx) = watch::channel(None);
+                *queued = Some(rx.clone());
+                let library = Arc::clone(self);
+                // A task of its own, so it runs to the end even if every caller goes away.
+                tokio::spawn(async move {
+                    let syncer = &library.syncers[i];
+                    let _running = syncer.lock.lock().await;
+                    syncer.queued.lock().unwrap().take();
+                    let _ = tx.send(Some(library.sync_now(syncer).await));
+                });
+                rx
+            }
+        };
+        done.wait_for(Option::is_some)
+            .await
+            .is_ok_and(|ok| *ok == Some(true))
+    }
+
+    async fn sync_now(&self, syncer: &Syncer) -> bool {
         match self.load(syncer).await {
             Ok(()) => {
                 let mut s = syncer.state.write().unwrap();

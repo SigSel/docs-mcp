@@ -66,7 +66,7 @@ platform, which is why OAuth insists on `https://` URLs.
 | `/mcp` | yes | yes | MCP Streamable HTTP, stateless. Serves the 2026-07-28 revision and earlier revisions |
 | `GET /healthz` | no | no | Always `200 {"status":"ok"}` once the process listens. Liveness |
 | `GET /readyz` | no | no | `200` with the status object once an index is loaded, `503` with it before. Readiness |
-| `POST /refresh` | refresh | yes | Runs a sync now and waits for it. `200` with the status object, or `500` with it if the sync failed. For webhooks (§2.1) |
+| `POST /refresh` | refresh | yes | Runs a sync that starts after the request, shared with other calls waiting for one (§3.3), and waits for it. `200` with the status object, or `500` with it if the sync failed. For webhooks (§2.1) |
 | `GET /.well-known/oauth-protected-resource…` | no | yes | With OAuth only: the protected resource metadata (§2.2) |
 
 The status object:
@@ -254,8 +254,11 @@ Every refresh re-reads the directory and rebuilds the index. `commit` is `null`.
 - A sync that fails keeps serving the previous index and records `last_error`.
 - A successful sync clears `last_error`.
 - Building the new index happens off to the side and is swapped in atomically.
-- Syncs never overlap. `/refresh` during a sync waits for that sync to finish,
-  then runs its own.
+- Syncs of a source never overlap. A `/refresh` (or a scheduled sync) gets a
+  sync that starts after it: during a sync, it waits for that sync to finish,
+  then runs the next one. Every call that arrives while that next sync is still
+  waiting shares it, so a burst of calls costs one fetch, however long the
+  burst.
 - Tools called before the first index exists return a tool error:
   `Index not ready yet` plus the last error, if any.
 - Display copies of the repo URL have any `user:password@` part removed.

@@ -56,6 +56,7 @@ class GitHost:
         self.expected_auth = basic(*credentials) if credentials else None
         self.redirect_to: str | None = None
         self.auth_seen: list[str | None] = []  # the Authorization header of every request, in order
+        self.requests: list[str] = []  # the method and path of every request, in order
         self.hangups = 0  # stalled requests whose client went away
         self._gate: threading.Event | None = None
         self._httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
@@ -103,6 +104,7 @@ class _Handler(BaseHTTPRequestHandler):
         host: GitHost = self.server.host  # type: ignore[attr-defined]
         given = self.headers.get("Authorization")
         host.auth_seen.append(given)
+        host.requests.append(f"{self.command} {self.path.partition('?')[0]}")
         if (gate := host._gate) is not None:
             self._stall(host, gate)
             return
