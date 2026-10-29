@@ -258,6 +258,14 @@ Every refresh re-reads the directory and rebuilds the index. `commit` is `null`.
 
 ## 4. Content model
 
+Everything in this section and in §5 reads files that anyone who can push to a
+source wrote. **No page may cost much more to parse and index than it is
+long**, in time or memory, whatever it holds. The rules below are written so a
+linear-time implementation exists, and both are one: the Python implementation
+finds JSX comments, heading attributes and closing hashes without regexes,
+because Python's backtracking made them quadratic.
+`conformance/test_page_cost.py` holds pages that once broke this rule.
+
 ### 4.1 Discovery
 
 - The root is `<repo or local path>/<DOCS_DIR>`.

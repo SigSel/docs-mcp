@@ -13,13 +13,11 @@ Metadata = dict[str, str | list[str]]
 FENCE_OPEN = re.compile(r"^\s*(`{3,}|~{3,})")
 MDX_MODULE_LINE = re.compile(r"^\s*(import|export)\s")
 INLINE_CODE = re.compile(r"`[^`\n]+`")
-JSX_COMMENT = re.compile(r"\{/\*.*?\*/\}", re.DOTALL)
 TAG = re.compile(r"</?[A-Za-z][A-Za-z0-9._:-]*(\s[^<>]*)?/?>")
 LABEL_ATTR = re.compile(r"""\blabel\s*=\s*(?:"([^"]*)"|'([^']*)')""")
 TITLE_ATTR = re.compile(r"""\btitle\s*=\s*(?:"([^"]*)"|'([^']*)')""")
 HEADING = re.compile(r"^(#{1,6})[ \t]+(.*)$")
-HEADING_ATTR = re.compile(r"\s*\{\s*#([A-Za-z0-9_-]+)[^}]*\}\s*$")
-CLOSING_HASHES = re.compile(r"(^|\s+)#+\s*$")
+HEADING_ATTR_OPEN = re.compile(r"\{\s*#([A-Za-z0-9_-]+)")
 LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 PLACEHOLDER = re.compile(r"\x00(\d+)\x00")
 
@@ -179,6 +177,41 @@ def extract_metadata(front: dict[str, Any], ignore: frozenset[str]) -> Metadata:
     return meta
 
 
+# JSX comments, heading attributes and closing hashes are found by hand, not with the regexes the other
+# implementations use: Python's backtracking made those cost the square of a line's length, and it holds the GIL
+# meanwhile, so one crafted page froze the whole server for hours (SPEC.md §4.4). Each function matches what its
+# regex does in a linear-time engine.
+
+
+def _strip_jsx_comments(text: str) -> str:
+    r"""Drops every `{/* … */}`, like `\{/\*.*?\*/\}` with DOTALL."""
+    out, i = [], 0
+    while (start := text.find("{/*", i)) != -1 and (end := text.find("*/}", start + 3)) != -1:
+        out.append(text[i:start])
+        i = end + 3
+    out.append(text[i:])
+    return "".join(out)
+
+
+def _heading_attr(text: str) -> tuple[str, int] | None:
+    r"""The `{#id}` that ends a heading, as (id, where it starts), like `\s*\{\s*#([A-Za-z0-9_-]+)[^}]*\}\s*$`: the
+    first `{#id …` after the line's second-to-last `}`, when the line ends with `}`."""
+    text = text.rstrip()
+    if not text.endswith("}"):
+        return None
+    m = HEADING_ATTR_OPEN.search(text, text.rfind("}", 0, len(text) - 1) + 1)
+    return (m.group(1), m.start()) if m else None
+
+
+def _strip_closing_hashes(text: str) -> str:
+    r"""Drops a closing run of `#` and the whitespace before it, like `(^|\s+)#+\s*$`."""
+    tail = text.rstrip()
+    start = len(tail.rstrip("#"))
+    if start == len(tail) or (start and not tail[start - 1].isspace()):
+        return text
+    return tail[:start].rstrip()
+
+
 def _clean_prose(text: str, mdx: bool) -> str:
     if mdx:
         text = "\n".join(line for line in text.split("\n") if not MDX_MODULE_LINE.match(line))
@@ -198,7 +231,7 @@ def _clean_prose(text: str, mdx: bool) -> str:
         return ""
 
     text = INLINE_CODE.sub(protect, text)
-    text = JSX_COMMENT.sub("", text)
+    text = _strip_jsx_comments(text)
     text = TAG.sub(tag, text)
     return PLACEHOLDER.sub(lambda m: protected[int(m.group(1))], text)
 
@@ -233,11 +266,9 @@ def clean(body: str, mdx: bool) -> list[_Line]:
         for text in _clean_prose("\n".join(seg), mdx).split("\n"):
             text = text.rstrip()
             anchor = None
-            if HEADING.match(text):
-                m = HEADING_ATTR.search(text)
-                if m:
-                    anchor = m.group(1)
-                    text = text[: m.start()].rstrip()
+            if HEADING.match(text) and (attr := _heading_attr(text)):
+                anchor, start = attr
+                text = text[:start].rstrip()
             if text == "" and lines and not lines[-1].code and lines[-1].text == "":
                 continue
             lines.append(_Line(text, False, anchor))
@@ -250,7 +281,7 @@ def clean(body: str, mdx: bool) -> list[_Line]:
 
 
 def heading_text(raw: str) -> str:
-    text = CLOSING_HASHES.sub("", raw)
+    text = _strip_closing_hashes(raw)
     return LINK.sub(r"\1", text).strip()
 
 
@@ -285,7 +316,10 @@ def build_sections(lines: list[_Line]) -> list[Section]:
     sections = [Section(0, None, None, False, 0, first, first)]
     for idx, (n, level, text, anchor, explicit) in enumerate(headings):
         own_end = headings[idx + 1][0] if idx + 1 < len(headings) else len(lines)
-        end = next((h[0] for h in headings[idx + 1 :] if h[1] <= level), len(lines))
+        # By index, not over `headings[idx + 1 :]`: copying the rest of the list for every heading made a page of
+        # many headings cost the square of their number.
+        later = range(idx + 1, len(headings))
+        end = next((headings[k][0] for k in later if headings[k][1] <= level), len(lines))
         sections.append(Section(level, text, anchor, explicit, n, own_end, end))
     return sections
 
