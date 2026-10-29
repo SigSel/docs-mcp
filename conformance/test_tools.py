@@ -181,6 +181,12 @@ async def test_search_prefix_match(server: Server) -> None:
     assert [r["path"] for r in data["results"]] == ["python/notes.md"]
 
 
+async def test_search_counts_only_64_terms(server: Server) -> None:
+    filler = " ".join(f"fyll{i}" for i in range(64))  # words found nowhere
+    assert (await server.json("search_docs", {"query": f"sjiraffkomponent {filler}"}))["count"] == 1
+    assert (await server.json("search_docs", {"query": f"{filler} sjiraffkomponent"}))["count"] == 0
+
+
 async def test_search_exact_beats_prefix(server: Server) -> None:
     # rust/testing.md has "testing" in its title (weight 2) and metadata (weight 1);
     # rust/rules.mdx only in metadata.

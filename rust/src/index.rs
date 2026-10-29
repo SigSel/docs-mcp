@@ -19,6 +19,8 @@ const B: f64 = 0.75;
 const MAX_PER_PAGE: usize = 3;
 const PREFIX_FACTOR: f64 = 0.5;
 const PREFIX_MIN_LEN: usize = 3;
+/// Each query term walks the vocabulary, so more would let one query cost seconds.
+const MAX_QUERY_TERMS: usize = 64;
 const FUZZY_FACTOR: f64 = 0.3;
 const FUZZY_MIN_LEN: usize = 6;
 const MAX_FILE_BYTES: usize = 1_000_000;
@@ -555,6 +557,7 @@ impl DocIndex {
         let terms: Vec<String> = tokenize(query)
             .into_iter()
             .filter(|t| seen.insert(t.clone()))
+            .take(MAX_QUERY_TERMS)
             .collect();
         if terms.is_empty() {
             return Err(ToolFailure(

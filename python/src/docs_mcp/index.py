@@ -17,6 +17,7 @@ K1, B = 1.2, 0.75
 MAX_PER_PAGE = 3
 PREFIX_FACTOR, PREFIX_MIN_LEN = 0.5, 3
 FUZZY_FACTOR, FUZZY_MIN_LEN = 0.3, 6
+MAX_QUERY_TERMS = 64  # each one walks the vocabulary, so more would let one query cost seconds
 MAX_FILE_BYTES = 1_000_000
 SECRET_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".jks", ".keystore")
 # SSH private keys by their default names, and files that hold credentials for git, HTTP, npm, PyPI and PostgreSQL.
@@ -223,7 +224,7 @@ class DocIndex:
     def search(
         self, query: str, filters: dict[str, Any] | None, path_prefix: str | None, limit: int, source: str | None
     ) -> dict[str, Any]:
-        terms = list(dict.fromkeys(tokenize(query)))
+        terms = list(dict.fromkeys(tokenize(query)))[:MAX_QUERY_TERMS]
         if not terms:
             raise ToolFailure("The query must contain at least one word.")
         limit = max(1, min(50, limit))

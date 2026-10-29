@@ -494,7 +494,8 @@ a page with thousands of metadata values and thousands of headings would hold
 their product, and run out of memory (§4).
 
 **Query terms.** The query is tokenized the same way and duplicates are
-removed. Each query term `q` matches:
+removed. Only the first 64 terms count; the rest are ignored, so a long query
+cannot cost much more than a short one. Each query term `q` matches:
 
 - the vocabulary term `q` itself, with factor 1;
 - when `q` has at least 3 characters, every other vocabulary term that starts
