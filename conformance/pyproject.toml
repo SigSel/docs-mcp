@@ -5,7 +5,7 @@ description = "Black-box tests that every docs-mcp implementation must pass"
 requires-python = ">=3.12"
 dependencies = [
     "mcp==2.3.0",
-    "pytest==9.0.3",
+    "pytest==9.2.0",
 ]
 
 [tool.uv]

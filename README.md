@@ -260,11 +260,11 @@ run (full table, method and machine in
 | | Rust | Python | TypeScript |
 |---|---|---|---|
 | Image size | 200 MB | 276 MB | 364 MB |
-| Start to ready | 0.6 s | 3.0 s | 0.9 s |
-| Memory, idle / after load | 10 / 12 MB | 62 / 63 MB | 54 / 115 MB |
-| search_docs, median | 4 ms | 10 ms | 9 ms |
+| Start to ready | 0.5 s | 3.1 s | 0.9 s |
+| Memory, idle / after load | 9 / 11 MB | 63 / 64 MB | 54 / 116 MB |
+| search_docs, median | 4 ms | 11 ms | 10 ms |
 | Source (non-blank lines) | 1824 | 987 | 1085 |
-| SDK | rmcp 3.5 + axum | mcp 2.3 (`MCPServer`) + Starlette | @modelcontextprotocol/server 2.3 |
+| SDK | rmcp 3.8 + axum | mcp 2.3 (`MCPServer`) + Starlette | @modelcontextprotocol/server 2.3 |
 
 Most of every image is `git` and its dependencies. Choose the language your
 team will keep fixing. The spec and the conformance suite stay useful whichever

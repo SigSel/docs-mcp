@@ -2,7 +2,7 @@
 name = "docs-mcp"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 description = "MCP server that serves a folder of Markdown docs from git"
 publish = false
 
@@ -14,12 +14,12 @@ indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = "0.2.38"
 nix = { version = "0.31.3", default-features = false, features = ["signal"] }
 regex = "1.13.1"
-rmcp = { version = "3.5.1", features = ["server", "transport-streamable-http-server", "macros", "schemars"] }
+rmcp = { version = "3.8.0", features = ["server", "transport-streamable-http-server", "macros", "schemars"] }
 schemars = "1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["preserve_order"] }
 subtle = "2.6.1"
-tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "process", "signal", "time", "sync", "fs"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "process", "signal", "time", "sync", "fs"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 yaml-rust2 = "0.13.0"

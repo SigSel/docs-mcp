@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "mcp==2.3.0",
     "pyyaml==6.0.3",
-    "starlette==1.8.0",
+    "starlette==1.10.0",
     "uvicorn==0.54.0",
 ]
 
@@ -15,7 +15,7 @@ dependencies = [
 docs-mcp = "docs_mcp.__main__:main"
 
 [dependency-groups]
-dev = ["pytest==9.0.3", "ruff==0.15.12"]
+dev = ["pytest==9.2.0", "ruff==0.17.3"]
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
