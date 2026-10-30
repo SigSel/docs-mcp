@@ -49,4 +49,5 @@ Out of scope, because docs-mcp cannot fix them:
 The [threat model](docs/threat-model.md) lists who might attack docs-mcp, what
 stops them, and every finding of its reviews, fixed or open. Each fix comes
 with a test in `conformance/`. `just audit` checks the locked dependencies
-against known vulnerabilities.
+against known vulnerabilities. CI runs the tests and the audit on every push,
+and the audit again every week.

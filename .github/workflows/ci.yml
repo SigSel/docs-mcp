@@ -1,0 +1,65 @@
+# Lint, test and audit both implementations on every push to main and every
+# pull request. Every Monday, audit the locked dependencies again, so a new
+# advisory shows up without a code change.
+#
+# Actions are pinned to commits, each a release at least two weeks old when
+# pinned; the comment names it. Tool versions match a local setup.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust 1.94.1
+        run: |
+          rustup toolchain install 1.94.1 --profile minimal --component clippy,rustfmt
+          rustup default 1.94.1
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.5"
+
+      # Checksum-verified release binaries; never a build from source.
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: just@1.49.0,cargo-deny@0.19.6
+          fallback: none
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: cargo-${{ runner.os }}-1.94.1-${{ hashFiles('rust/Cargo.lock') }}
+
+      - name: Lint
+        if: github.event_name != 'schedule'
+        run: just lint
+
+      - name: Test
+        if: github.event_name != 'schedule'
+        run: just test
+
+      - name: Audit
+        run: just audit

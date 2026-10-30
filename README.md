@@ -393,6 +393,10 @@ just audit           # known vulnerabilities in the locked dependencies
 just image measure   # build the images, then measure them
 ```
 
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs `just lint`,
+`just test` and `just audit` on every push and pull request, and `just audit`
+again every Monday.
+
 To change behaviour:
 
 1. Change `SPEC.md`.
