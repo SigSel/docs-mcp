@@ -1,13 +1,14 @@
 # docs-mcp
 
 An [MCP](https://modelcontextprotocol.io) server that serves a folder of
-Markdown docs, such as the dev-handbook, to AI assistants: Claude Code, VS Code
-Copilot, Cursor, or anything else that speaks MCP. It clones a git repo, indexes
-the `.md`/`.mdx` files in one directory, keeps pulling, and answers over HTTP.
+Markdown docs, such as a team's developer handbook, to AI assistants: Claude
+Code, VS Code Copilot, Cursor, or anything else that speaks MCP. It clones a git
+repo, indexes the `.md`/`.mdx` files in one directory, keeps pulling, and
+answers over HTTP.
 
-It runs once, centrally, on the internal network. Users point their assistant
-at it; nobody runs it on their own machine. Running it locally is for
-developing docs-mcp and for previewing handbook changes.
+It is meant to run once, centrally, usually on an internal network. Users point
+their assistant at it; nobody needs to run it on their own machine. Running it
+locally is for developing docs-mcp, trying it, and previewing handbook changes.
 
 New to MCP? Start with [What is MCP?](docs/what-is-mcp.md), then
 [What docs-mcp does](docs/what-docs-mcp-does.md). Deciding whether to trust it,
@@ -45,8 +46,8 @@ docs-mcp**:
 | Switch framework (Starlight → VitePress, Docusaurus, Zensical…) | Point `DOCS_DIR` at the new folder. Presentation-only frontmatter is ignored |
 | Write it in English, or Bokmål, instead of Nynorsk | Change `DOCS_LANGUAGE` (see [Languages](#languages)) |
 
-That last row has been tested: the cross-implementation diff below ran against
-the Starlight, VitePress and Zensical variants.
+The framework row has been tested: the cross-implementation diff below ran
+against the same handbook built with Starlight, VitePress and Zensical.
 
 ## What the assistant gets
 
@@ -327,7 +328,7 @@ filesystem except `/tmp`. Endpoints:
 
 | Where | How |
 |---|---|
-| Laptop, for development | `deploy/compose.yaml` (profiles `rust`, `python`, `git`) |
+| Laptop, for development | `deploy/compose.yaml` (profiles `rust`, `python`, `all` for both, `git`) |
 | Kubernetes | `kubectl apply -k deploy/k8s/overlays/example`. Copy the overlay, then set image, repo, `MCP_ALLOWED_HOSTS` and `secrets.env` |
 | Azure Container Apps | Step by step, with sign-in and HTTPS: [Set up docs-mcp on Azure Container Apps](docs/deploy-azure-container-apps.md) |
 | AWS App Runner/ECS, a VM | Run the image with the env vars below. Ingress on port 8080, health check `/readyz` |
@@ -355,7 +356,7 @@ run (full table, method and machine in
 | Start to ready | 0.5 s | 3.1 s |
 | Memory, idle / after load | 9 / 11 MB | 63 / 64 MB |
 | search_docs, median | 4 ms | 11 ms |
-| Source (non-blank lines) | 1824 | 987 |
+| Source (non-blank lines) | 3026 | 1638 |
 | SDK | rmcp 3.8 + axum | mcp 2.3 (`MCPServer`) + Starlette |
 
 Most of every image is `git` and its dependencies. Choose the language your
@@ -375,12 +376,15 @@ conformance/       black-box pytest suite run against any implementation
   githost.py       a git host over HTTP for the auth and timeout tests
   issuer.py        an OAuth issuer, shaped like Entra ID, for the sign-in tests
   compare.py       diff all implementations against a real docs tree
-  search_eval.*    search quality across nn/nb/en questions (just eval)
+  search_eval.py   search quality across nn/nb/en questions, kept locally (just eval)
   measure.py       image size, memory, startup, latency (just measure)
 fixtures/docs/     small docs tree that exercises every rule in the spec
 deploy/            compose.yaml, k8s/ (kustomize base + example overlay)
+playground/        a folder to try docs-mcp from in Claude Code (just try)
 MEASUREMENTS.md    the numbers above, with method and machine
-justfile           build, test, lint, run, compare, eval, image, measure
+SECURITY.md        how to report a vulnerability
+justfile           build, test, lint, audit, run, try, compare, eval, golden, image, measure
+.github/workflows/ CI: lint, test and audit
 ```
 
 ## Testing
@@ -404,7 +408,7 @@ To change behaviour:
 2. Change the tests.
 3. Change the Python implementation, run `just golden`, and review the diff in
    `conformance/golden.json`.
-4. Port the change to the other two until `just test` is green.
+4. Port the change to the Rust implementation until `just test` is green.
 
 ## Limits, on purpose
 
