@@ -52,6 +52,9 @@ ignores:
 | + page path indexed (weight 3) | 78% / 89% | 75% / 89% | 67% / 81% | 81% / 94% |
 | + one-edit matches for words of 6+ letters (**current**) | **83% / 92%** | **81% / 97%** | **67% / 81%** | **86% / 97%** |
 
+Rechecked 2026-10-30 at commit 5764c4f, after the second security review:
+the same numbers, from both implementations.
+
 What the steps did:
 
 - **Link URLs.** A see-also list linking to a page used to rank first for that
@@ -105,14 +108,29 @@ direction, not precision.
 
 **Results.**
 
-The TypeScript implementation was removed on 2026-10-29, after these runs.
-Its columns stay as a record.
+Measured 2026-10-30 on an 11th Gen Intel Core i7-1185G7 (8 threads), 15 GB
+RAM, Fedora 44 (Linux 7.2), podman 5.8.9. The code was commit 5764c4f, with
+Entra ID sign-in, several sources and the second security review's fixes. The
+docs were the same handbook (55 pages). Each implementation got 432 searches
+and 3 reads of the largest page (30 kB).
 
-Measured 2026-10-29 on an 11th Gen Intel Core i7-1185G7 (8 threads), 15 GB
-RAM, Fedora 44 (Linux 7.2), podman 5.8.9. The code was commit 56a250f plus
-updated dependencies (rmcp 3.8, Starlette 1.10). The docs were the
-same handbook (55 pages). Each implementation got 432 searches and 3 reads of
-the largest page (30 kB).
+| | Rust | Python |
+|---|---|---|
+| Image size | 206 MB | 276 MB |
+| `podman run` to ready | 0.64 s | 3.47 s |
+| Memory, idle | 10 MB | 65 MB |
+| Memory, after the load | 12 MB | 67 MB |
+| search_docs, median | 4.5 ms | 10.9 ms |
+| search_docs, 95th percentile | 7.3 ms | 22.0 ms |
+| read_doc (largest page), median | 3.4 ms | 5.6 ms |
+
+Against the run before, latency moved within the run-to-run variation
+described below. Start to ready is one sample per image: Rust's 0.64 s matches
+the earliest run's 0.65 s. The Rust image grew 6 MB.
+
+Earlier run, 2026-10-29, same machine. The code was commit 56a250f plus
+updated dependencies (rmcp 3.8, Starlette 1.10). The TypeScript implementation
+was removed after this run; its columns here and below stay as a record.
 
 | | Rust | Python | TypeScript |
 |---|---|---|---|
@@ -170,19 +188,23 @@ against the same docs tree and diffs everything they return:
 - `docs_overview` and `list_docs`;
 - `read_doc` for every page;
 - `read_doc` and `get_section` for every section anchor;
-- `search_docs` for the eval questions plus words sampled from the pages.
+- `search_docs` for a fixed set of queries, plus words and three-word phrases
+  sampled from the pages.
 
 Scores may differ by at most 0.002; everything else must be identical.
 
 **Results.**
 
-Run 2026-10-15, after the language changes:
+Run 2026-10-30, at commit 5764c4f:
 
 | Docs tree | Pages | Section reads | Searches | Comparisons | Differences |
 |---|---|---|---|---|---|
-| The handbook (Starlight, `.md`/`.mdx`) | 55 | 806 | 136 | 2008 | 0 |
-| The handbook as a VitePress site (`.md`, nn + root language) | 97 | 1595 | 136 | 3670 | 0 |
-| The handbook as a Zensical site (`.md`, `en/` + `nn/`) | 96 | 1594 | 136 | 3666 | 0 |
+| The handbook (Starlight, `.md`/`.mdx`) | 55 | 806 | 186 | 1054 | 0 |
+| The handbook as a VitePress site (`.md`, nn + root language) | 97 | 1595 | 186 | 1885 | 0 |
+| The handbook as a Zensical site (`.md`, `en/` + `nn/`) | 96 | 1594 | 186 | 1883 | 0 |
 
-The conformance suite (`just test`) adds 138 checks per implementation against
+The run before, on 2026-10-15 with TypeScript still in, also found 0
+differences.
+
+The conformance suite (`just test`) adds 245 checks per implementation against
 `fixtures/docs`, including byte-for-byte golden outputs.

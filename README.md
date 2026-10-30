@@ -352,10 +352,10 @@ run (full table, method and machine in
 
 | | Rust | Python |
 |---|---|---|
-| Image size | 200 MB | 276 MB |
-| Start to ready | 0.5 s | 3.1 s |
-| Memory, idle / after load | 9 / 11 MB | 63 / 64 MB |
-| search_docs, median | 4 ms | 11 ms |
+| Image size | 206 MB | 276 MB |
+| Start to ready | 0.6 s | 3.5 s |
+| Memory, idle / after load | 10 / 12 MB | 65 / 67 MB |
+| search_docs, median | 4.5 ms | 11 ms |
 | Source (non-blank lines) | 3026 | 1638 |
 | SDK | rmcp 3.8 + axum | mcp 2.3 (`MCPServer`) + Starlette |
 
