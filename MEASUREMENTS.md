@@ -13,12 +13,12 @@ the right page first, and in the top 3?
 internal developer handbook (55 pages, written in Nynorsk). Each question
 names its right page or section and is written four ways:
 
-| Variant | Example (`dep-vulnerabilities`) |
+| Variant | Example, about the test docs in `fixtures/docs` (`non-root`) |
 |---|---|
-| `nn`: Nynorsk | `sårbarheiter i avhengigheiter` |
-| `nb`: Bokmål | `sårbarheter i avhengigheter` |
-| `en`: English, word for word | `vulnerabilities in dependencies` |
-| `assistant`: what a model writes when the server says the docs are in Nynorsk: Nynorsk keywords plus Bokmål and English variants | `sårbarheiter sårbarheter vulnerabilities avhengigheiter avhengigheter dependencies` |
+| `nn`: Nynorsk | `køyre konteinar som ikkje-root` |
+| `nb`: Bokmål | `kjøre container som ikke-root` |
+| `en`: English, word for word | `run container as non-root` |
+| `assistant`: what a model writes when the server says the docs are in Nynorsk: Nynorsk keywords plus Bokmål and English variants | `køyre kjøre run konteinar container ikkje-root ikke-root non-root` |
 
 I wrote the `assistant` queries by hand, as a stand-in for what a model
 produces from the English question after reading the server's instructions.
@@ -34,9 +34,10 @@ ignores:
 ```json
 {"languages": ["nn", "nb", "en", "assistant"],
  "queries": [
-  {"id": "rs-203", "targets": ["rust/rules.mdx#rs-203"],
-   "nn": "unwrap i produksjon", "nb": "unwrap i produksjon", "en": "unwrap in production",
-   "assistant": "unwrap panikk panic produksjon production"}]}
+  {"id": "non-root", "targets": ["workflow/containers.md#samandrag"],
+   "nn": "køyre konteinar som ikkje-root", "nb": "kjøre container som ikke-root",
+   "en": "run container as non-root",
+   "assistant": "køyre kjøre run konteinar container ikkje-root ikke-root non-root"}]}
 ```
 
 `just eval` (or `uv run python search_eval.py <docs> --impl <impl>` in
@@ -53,9 +54,9 @@ ignores:
 
 What the steps did:
 
-- **Link URLs.** A see-also list linking to `virtual-environments.mdx` used to
-  rank first for "virtual environment", because the file name in the URL was
-  indexed as text. Now only the link text is.
+- **Link URLs.** A see-also list linking to a page used to rank first for that
+  page's topic, because the file name in the URL was indexed as text. Now only
+  the link text is.
 - **Page path.** File names describe a page plainly, and in this handbook they
   are English. That is where most of the English gain comes from.
 - **One-edit matches.** These bridge Nynorsk and Bokmål spelling
@@ -78,12 +79,11 @@ direction, not precision.
   first time.
 - **What is left.**
   - The assistant variant's five misses all have the right page at rank 2 to 4.
-    In some, the top hit is a fair answer too, such as a section on rebasing for
-    "rewrite published history".
+    In some, the top hit is a fair answer too.
   - Word-for-word English misses where no Norwegian word or file name lines up:
-    - "quality gates in CI", for a Nynorsk heading that shares no word with it;
-    - "add a dependency cargo": `dependency` is two edits from the file name
-      `dependencies`.
+    a Nynorsk heading that shares no word with the question, or an English word
+    two edits from the file name, such as a singular where the file name is
+    plural.
 
   Multilingual embeddings would close those, at the cost of hosting a model.
 

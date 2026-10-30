@@ -89,7 +89,7 @@ Translating a question into keywords is something the assistant is good at.
 - A word matches longer words that start with it: `avhengigheit` →
   `avhengigheiter`.
 - Page paths are searchable. They are often English even when the text is not:
-  `virtual-environments.mdx`, `glossary.mdx`.
+  `workflow/containers.md`, `rust/testing.md`.
 
 Measured on an internal handbook with 36 questions, each asked four ways. The table
 shows how often the right page came first, and how often it was in the top 3:
@@ -115,13 +115,14 @@ changes before they are pushed. Users connect to the central deployment instead
 (see [Deploying](#deploying)). Needs [just](https://just.systems) and podman.
 
 ```sh
-just try rust ../dev-handbooks/dev-handbook src/content/docs   # or python
-just try rust fixtures/docs .                                  # the test handbook
+just try rust                                  # the test handbook in fixtures/docs; or python
+just try rust ../my-handbook src/content/docs  # your checkout, and the docs folder in it
 ```
 
 That builds the image from your working tree and serves the handbook in a
 container on `http://localhost:8080/mcp`: no sign-in, no token, reachable only
-from this machine. Then, in another terminal:
+from this machine. Set `DOCS_PATH` and `DOCS_DIR` to make your checkout the
+default for every recipe. Then, in another terminal:
 
 ```sh
 cd playground && claude

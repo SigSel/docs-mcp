@@ -5,7 +5,7 @@ The Rust implementation of [docs-mcp](../README.md), built on `rmcp` 3.x with ax
 
 ```sh
 cargo build --release
-DOCS_LOCAL_PATH=../../dev-handbooks/dev-handbook DOCS_DIR=src/content/docs target/release/docs-mcp
+DOCS_LOCAL_PATH=../fixtures/docs target/release/docs-mcp
 cargo clippy --release -- -D warnings   # pedantic, see Cargo.toml
 ```
 

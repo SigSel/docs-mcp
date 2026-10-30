@@ -1,7 +1,10 @@
 # docs-mcp: one MCP server, two implementations. `just` lists the recipes.
 
 impls := "rust python"
-handbook := env("DOCS_PATH", "../dev-handbooks/dev-handbook")
+# The docs compare, eval, measure, run and try use unless given others: the
+# test handbook, or your checkout with DOCS_PATH and DOCS_DIR set.
+handbook := env("DOCS_PATH", "fixtures/docs")
+handbook_dir := env("DOCS_DIR", ".")
 
 default:
     @just --list
@@ -38,15 +41,15 @@ audit:
     done
 
 # Diff all implementations against a real docs tree
-compare docs=(handbook / "src/content/docs"): build
+compare docs=(handbook / handbook_dir): build
     cd conformance && uv run python compare.py {{ absolute_path(docs) }}
 
 # Search quality for Nynorsk, Bokmål and English questions (conformance/search_eval.json)
-eval impl="python" docs=(handbook / "src/content/docs"): (build impl)
+eval impl="python" docs=(handbook / handbook_dir): (build impl)
     cd conformance && uv run python search_eval.py {{ absolute_path(docs) }} --impl {{ impl }}
 
 # Image size, memory, startup and latency of each image; needs `just image` first
-measure path=handbook dir="src/content/docs":
+measure path=handbook dir=handbook_dir:
     cd conformance && uv run python measure.py {{ absolute_path(path) }} --dir {{ dir }}
 
 # Regenerate conformance/golden.json from the Python implementation; review the diff!
@@ -54,7 +57,7 @@ golden: (build "python")
     cd conformance && uv run python golden.py python
 
 # Serve a local handbook checkout on http://localhost:8080/mcp
-run impl="rust" path=handbook dir="src/content/docs": (build impl)
+run impl="rust" path=handbook dir=handbook_dir: (build impl)
     #!/usr/bin/env bash
     set -euo pipefail
     export DOCS_LOCAL_PATH="{{ absolute_path(path) }}" DOCS_DIR="{{ dir }}" DOCS_REFRESH_SECONDS=5
@@ -65,7 +68,7 @@ run impl="rust" path=handbook dir="src/content/docs": (build impl)
     esac
 
 # Serve a local handbook checkout from a container on http://localhost:8080/mcp, as playground/ expects
-try impl="rust" path=handbook dir="src/content/docs": (image impl)
+try impl="rust" path=handbook dir=handbook_dir: (image impl)
     #!/usr/bin/env bash
     set -euo pipefail
     exec podman run --rm --replace --name docs-mcp-try --read-only --tmpfs /tmp \

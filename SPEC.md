@@ -72,7 +72,7 @@ platform, which is why OAuth insists on `https://` URLs.
 The status object:
 
 ```json
-{"ready": true, "pages": 55, "commit": "e44bdc1…", "synced_at": "2026-10-15T17:00:00Z", "last_error": null}
+{"ready": true, "pages": 7, "commit": "…", "synced_at": "2026-10-15T17:00:00Z", "last_error": null}
 ```
 
 `commit` is `null` for a local source. `synced_at` is the last successful sync,
@@ -488,7 +488,7 @@ before the first heading.
 
 The page path counts because file names are often the plainest description of
 a page, and are often in English even when the text is not
-(`virtual-environments.mdx`).
+(`workflow/containers.md`).
 
 The path, title and metadata counts are the same for every section of a page.
 Keep them once per page and add them in when scoring: copied into each section,
@@ -594,9 +594,9 @@ in. In the texts below:
 {"name":"dev-handbook",
  "language":"Norwegian Nynorsk",
  "source":{"type":"git","repo":"https://…","ref":"main","dir":"src/content/docs","commit":"…","synced_at":"…"},
- "page_count":55,
- "folders":[{"path":".","pages":2},{"path":"python","pages":30}],
- "fields":{"innhaldstype":{"krav":6,"rettleiing":38}}}
+ "page_count":7,
+ "folders":[{"path":".","pages":1},{"path":"python","pages":3},{"path":"rust","pages":2},{"path":"workflow","pages":1}],
+ "fields":{"innhaldstype":{"krav":1,"rettleiing":2,"tilråding":1}}}
 ```
 
 - **`source`:** for a local source, `source` is
@@ -756,8 +756,8 @@ Without `DOCS_SOURCES`, the variables describe a single source, and nothing in
   broken new source never takes over from a working one. Its status object:
 
   ```json
-  {"ready": true, "pages": 82,
-   "sources": [{"name": "handbook", "ready": true, "pages": 55, "commit": "…", "synced_at": "…", "last_error": null}, …]}
+  {"ready": true, "pages": 19,
+   "sources": [{"name": "handbook", "ready": true, "pages": 7, "commit": "…", "synced_at": "…", "last_error": null}, …]}
   ```
 
   `pages` at the top is the sum. The list follows the configured order.

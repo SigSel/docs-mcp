@@ -5,7 +5,7 @@ Starlette and uvicorn. Behaviour is defined by [SPEC.md](../SPEC.md).
 
 ```sh
 uv sync
-DOCS_LOCAL_PATH=../../dev-handbooks/dev-handbook DOCS_DIR=src/content/docs uv run docs-mcp
+DOCS_LOCAL_PATH=../fixtures/docs uv run docs-mcp
 uv run ruff check src && uv run ruff format --check src
 ```
 

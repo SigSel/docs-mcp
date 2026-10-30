@@ -1,6 +1,6 @@
 """Container footprint and latency for each implementation's image.
 
-    uv run python measure.py /path/to/handbook-checkout [--dir src/content/docs] [--impl rust,python]
+    uv run python measure.py /path/to/handbook-checkout [--dir docs/inside/it] [--impl rust,python]
 
 Needs the images built (`just image`). For each image: its size, the time from `podman run` to
 /readyz answering 200, memory once idle, then latency over MCP for search_docs (the questions in
@@ -125,7 +125,7 @@ def machine() -> str:
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("docs", type=Path, help="the handbook checkout")
-    parser.add_argument("--dir", default="src/content/docs", help="docs directory inside the checkout")
+    parser.add_argument("--dir", default=".", help="docs directory inside the checkout")
     parser.add_argument("--impl", default="rust,python")
     parser.add_argument("--tag", default="dev")
     parser.add_argument("--rounds", type=int, default=3, help="passes over the eval questions")

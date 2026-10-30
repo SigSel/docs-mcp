@@ -4,7 +4,7 @@
 #   claude mcp add --transport http handbook http://localhost:8081/mcp
 #
 # DOCS_PATH points at the repo checkout and DOCS_DIR at the docs inside it; the
-# defaults fit ~/code/dev-handbooks/dev-handbook next to this repo.
+# defaults serve the test handbook in fixtures/docs.
 #
 # The `git` profile shows the production shape instead: clone from a remote and
 # pull every five minutes. Put DOCS_REPO_URL and DOCS_GIT_TOKEN in deploy/.env.
@@ -12,14 +12,14 @@
 x-local: &local
   environment:
     DOCS_LOCAL_PATH: /docs
-    DOCS_DIR: ${DOCS_DIR:-src/content/docs}
+    DOCS_DIR: ${DOCS_DIR:-.}
     DOCS_NAME: ${DOCS_NAME:-dev-handbook}
     DOCS_LANGUAGE: ${DOCS_LANGUAGE:-Norwegian Nynorsk}
     DOCS_REFRESH_SECONDS: "5"
     MCP_ALLOWED_HOSTS: localhost,127.0.0.1
   volumes:
     # :z relabels for SELinux (Fedora/RHEL); harmless elsewhere.
-    - ${DOCS_PATH:-../../dev-handbooks/dev-handbook}:/docs:ro,z
+    - ${DOCS_PATH:-../fixtures/docs}:/docs:ro,z
   read_only: true
   tmpfs: [/tmp]
 
