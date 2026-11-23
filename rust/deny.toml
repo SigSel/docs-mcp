@@ -1,5 +1,5 @@
 # `cargo deny check advisories`, which `just audit` runs. Each ignored advisory
-# says why it does not apply. Look again whenever jsonwebtoken is updated.
+# says why it does not apply. Look again whenever jsonwebtoken or rmcp is updated.
 [advisories]
 ignore = [
     # The Marvin attack: timing leaks while decrypting or signing with an RSA
@@ -10,4 +10,8 @@ ignore = [
     # ECDSA signatures, on public keys and public tokens. The fix is in
     # crypto-bigint 0.7, which jsonwebtoken does not use yet.
     { id = "RUSTSEC-2026-0387", reason = "only ECDSA signature verification on public data" },
+    # chrono is unmaintained, not vulnerable. rmcp depends on it directly and
+    # enables schemars' chrono04 feature, as of rmcp 3.11.0. Drop this when
+    # rmcp moves to jiff or time.
+    { id = "RUSTSEC-2026-0543", reason = "unmaintained, not a vulnerability; only reachable through rmcp" },
 ]
